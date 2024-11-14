@@ -1,0 +1,1 @@
+# Base formatter interface/abstract class
