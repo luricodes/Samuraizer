@@ -14,6 +14,7 @@ import json
 import random
 
 from ....workers.analysis.ai_worker import AIWorker
+from samuraizer.config.llm_config import LLMConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -118,123 +119,6 @@ class AnalysisTab(QWidget):
         self.results_text.setFont(QFont("Consolas", 10))
         layout.addWidget(self.results_text)
 
-class LLMConfigDialog(QDialog):
-    """Dialog for configuring LLM settings."""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("LLM Configuration")
-        self.settings = QSettings()
-        self.setup_ui()
-        self.load_settings()
-        
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # LLM Provider selection
-        provider_layout = QHBoxLayout()
-        provider_label = QLabel("LLM Provider:")
-        self.provider_combo = QComboBox()
-        self.provider_combo.addItems(["OpenAI", "Anthropic", "Custom"])
-        provider_layout.addWidget(provider_label)
-        provider_layout.addWidget(self.provider_combo)
-        layout.addLayout(provider_layout)
-        
-        # API Key input
-        key_layout = QHBoxLayout()
-        key_label = QLabel("API Key:")
-        self.api_key_input = QTextEdit()
-        self.api_key_input.setMaximumHeight(60)
-        key_layout.addWidget(key_label)
-        key_layout.addWidget(self.api_key_input)
-        layout.addLayout(key_layout)
-        
-        # Endpoint URL (for custom provider)
-        endpoint_layout = QHBoxLayout()
-        endpoint_label = QLabel("Endpoint URL:")
-        self.endpoint_input = QTextEdit()
-        self.endpoint_input.setMaximumHeight(60)
-        endpoint_layout.addWidget(endpoint_label)
-        endpoint_layout.addWidget(self.endpoint_input)
-        layout.addLayout(endpoint_layout)
-        
-        # Model selection
-        model_layout = QHBoxLayout()
-        model_label = QLabel("Model:")
-        self.model_combo = QComboBox()
-        self.update_model_choices(self.provider_combo.currentText())
-        model_layout.addWidget(model_label)
-        model_layout.addWidget(self.model_combo)
-        layout.addLayout(model_layout)
-        
-        # Max tokens
-        tokens_layout = QHBoxLayout()
-        tokens_label = QLabel("Max Tokens:")
-        self.max_tokens = QSpinBox()
-        self.max_tokens.setRange(100, 10000)
-        self.max_tokens.setValue(2000)
-        tokens_layout.addWidget(tokens_label)
-        tokens_layout.addWidget(self.max_tokens)
-        layout.addLayout(tokens_layout)
-        
-        # Save and Cancel buttons
-        button_layout = QHBoxLayout()
-        save_button = QPushButton("Save")
-        save_button.clicked.connect(self.accept)
-        cancel_button = QPushButton("Cancel")
-        cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(save_button)
-        button_layout.addWidget(cancel_button)
-        layout.addLayout(button_layout)
-        
-        # Connect provider change to model update
-        self.provider_combo.currentTextChanged.connect(self.update_model_choices)
-        
-    def update_model_choices(self, provider: str):
-        self.model_combo.clear()
-        if provider == "OpenAI":
-            self.model_combo.addItems([
-                "gpt-4-turbo-preview",
-                "gpt-4",
-                "gpt-3.5-turbo"
-            ])
-        elif provider == "Anthropic":
-            self.model_combo.addItems([
-                "claude-3-opus-20240229",
-                "claude-3-sonnet-20240229",
-                "claude-3-haiku-20240307"
-            ])
-        else:
-            self.model_combo.setEditable(True)
-            self.model_combo.setPlaceholderText("Enter model name...")
-            
-    def load_settings(self):
-        self.provider_combo.setCurrentText(
-            self.settings.value("llm/provider", "OpenAI")
-        )
-        self.api_key_input.setText(
-            self.settings.value("llm/api_key", "")
-        )
-        self.endpoint_input.setText(
-            self.settings.value("llm/endpoint", "")
-        )
-        self.model_combo.setCurrentText(
-            self.settings.value("llm/model", "gpt-4-turbo-preview")
-        )
-        self.max_tokens.setValue(
-            self.settings.value("llm/max_tokens", 2000, type=int)
-        )
-        
-    def accept(self):
-        """Save settings and close dialog."""
-        self.settings.setValue("llm/provider", self.provider_combo.currentText())
-        self.settings.setValue("llm/api_key", self.api_key_input.toPlainText())
-        self.settings.setValue("llm/endpoint", self.endpoint_input.toPlainText())
-        self.settings.setValue("llm/model", self.model_combo.currentText())
-        self.settings.setValue("llm/max_tokens", self.max_tokens.value())
-        self.settings.sync()
-        super().accept()
-
 class DetailsPanel(QWidget):
     """Panel for displaying and analyzing detailed information about selected items."""
     
@@ -243,10 +127,20 @@ class DetailsPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings = QSettings()
+        self.llm_config = LLMConfigManager()
         self.current_selection = None
         self.current_analysis_type = None
         self.ai_thread = None
         self.ai_worker = None
+        
+        # Clean up old LLM settings
+        self.settings.remove("llm/provider")
+        self.settings.remove("llm/api_key")
+        self.settings.remove("llm/endpoint")
+        self.settings.remove("llm/model")
+        self.settings.remove("llm/max_tokens")
+        self.settings.sync()
+        
         self.setup_ui()
         
     def setup_ui(self):
@@ -274,11 +168,6 @@ class DetailsPanel(QWidget):
         self.analyze_button.clicked.connect(self.start_analysis)
         self.analyze_button.setEnabled(False)
         toolbar.addWidget(self.analyze_button)
-        
-        # Add configure LLM button
-        config_button = QPushButton("Configure LLM")
-        config_button.clicked.connect(self.show_llm_config)
-        toolbar.addWidget(config_button)
         
         layout.addWidget(toolbar)
         
@@ -389,12 +278,6 @@ class DetailsPanel(QWidget):
                 "Copy Error",
                 f"Failed to copy analysis: {str(e)}"
             )
-
-    def show_llm_config(self):
-        """Show LLM configuration dialog."""
-        dialog = LLMConfigDialog(self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            QMessageBox.information(self, "Success", "LLM Configuration saved successfully!")
         
     def set_selection(self, selection_data: Dict[str, Any]):
         """Set the current selection data and enable analysis."""
@@ -407,18 +290,16 @@ class DetailsPanel(QWidget):
             return
             
         try:
-            # Get LLM settings
-            provider = self.settings.value("llm/provider", "OpenAI")
-            api_key = self.settings.value("llm/api_key", "")
-            model = self.settings.value("llm/model", "gpt-4-turbo-preview")
-            endpoint = self.settings.value("llm/endpoint", "")
-            max_tokens = self.settings.value("llm/max_tokens", 2000, type=int)
+            # Get LLM settings from new config manager
+            config = self.llm_config.get_config()
+            api_key = config['api_key']
+            model = config['model']
             
             if not api_key:
                 QMessageBox.warning(
                     self,
                     "Configuration Error",
-                    "Please configure LLM settings first"
+                    "Please configure LLM settings in Settings > LLM API Settings"
                 )
                 return
                 
@@ -448,11 +329,11 @@ class DetailsPanel(QWidget):
             # Create worker and thread
             self.ai_thread = QThread()
             self.ai_worker = AIWorker(prompt, {
-                'provider': provider,
                 'api_key': api_key,
                 'model': model,
-                'endpoint': endpoint,
-                'max_tokens': max_tokens
+                'temperature': config['temperature'],
+                'max_tokens': config['max_tokens'],
+                'api_base': config['api_base']
             })
             
             # Move worker to thread

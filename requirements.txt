@@ -11,6 +11,7 @@ rich==13.5.2
 click==8.1.7
 
 # GUI requirements
+pydantic==1.10.13
 PyQt6>=6.4.0
 PyQt6-Qt6>=6.4.0
 PyQt6-sip>=13.4.0
@@ -22,6 +23,7 @@ graphviz>=0.20.1
 PyQtDarkTheme
 openai
 requests
+
 
 # Platform-specific magic package
 python-magic-bin==0.4.14; platform_system == "Windows"

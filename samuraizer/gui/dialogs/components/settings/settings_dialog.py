@@ -2,7 +2,7 @@
 
 from typing import Optional, TYPE_CHECKING
 import logging
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QWidget, QTabWidget, QVBoxLayout
 from PyQt6.QtCore import QSize
 
 from ...base_dialog import BaseDialog
@@ -12,6 +12,7 @@ from .groups import (
     CacheSettingsGroup
 )
 from .groups.timezone_settings import TimezoneSettingsGroup
+from .groups.llm_settings import LLMSettingsGroup
 
 if TYPE_CHECKING:
     from ....windows import MainWindow
@@ -24,7 +25,7 @@ class SettingsDialog(BaseDialog):
             parent=parent,
             title="Settings",
             modal=True,
-            minimum_size=QSize(350, 200),
+            minimum_size=QSize(450, 500),
             settings_prefix="settings_dialog"
         )
         self._showing_cache_warning = False
@@ -33,20 +34,47 @@ class SettingsDialog(BaseDialog):
     def setup_ui(self) -> None:
         """Set up the dialog's user interface."""
         try:
+            # Create tab widget
+            self.tab_widget = QTabWidget()
+            
             # Create settings groups using modular components
             self.general_settings = GeneralSettingsGroup(self)
             self.theme_settings = ThemeSettingsGroup(self)
             self.cache_settings = CacheSettingsGroup(self)
             self.timezone_settings = TimezoneSettingsGroup(self)
+            self.llm_settings = LLMSettingsGroup(self)
             
-            # Add components to layout
-            self.main_layout.addWidget(self.general_settings)
-            self.main_layout.addWidget(self.theme_settings)
-            self.main_layout.addWidget(self.cache_settings)
-            self.main_layout.addWidget(self.timezone_settings)
+            # Create tab pages with layouts
+            # General tab
+            general_tab = QWidget()
+            general_layout = QVBoxLayout()
+            general_layout.addWidget(self.general_settings)
+            general_layout.addWidget(self.theme_settings)
+            general_layout.addStretch()
+            general_tab.setLayout(general_layout)
             
-            # Add stretch to keep everything aligned at the top
-            self.main_layout.addStretch()
+            # System tab
+            system_tab = QWidget()
+            system_layout = QVBoxLayout()
+            system_layout.addWidget(self.cache_settings)
+            system_layout.addWidget(self.timezone_settings)
+            system_layout.addStretch()
+            system_tab.setLayout(system_layout)
+            
+            # LLM tab
+            llm_tab = QWidget()
+            llm_layout = QVBoxLayout()
+            llm_layout.addWidget(self.llm_settings)
+            llm_layout.addStretch()
+            llm_tab.setLayout(llm_layout)
+            
+            # Add tabs to tab widget
+            self.tab_widget.addTab(general_tab, "General")
+            self.tab_widget.addTab(system_tab, "System")
+            self.tab_widget.addTab(llm_tab, "LLM API Settings")
+            
+            # Add tab widget to main layout
+            self.main_layout.addWidget(self.tab_widget)
             
             # Load settings
             self.load_settings()
@@ -62,6 +90,7 @@ class SettingsDialog(BaseDialog):
             self.theme_settings.load_settings()
             self.cache_settings.load_settings()
             self.timezone_settings.load_settings()
+            self.llm_settings.load_settings()
             logger.debug("Settings loaded successfully")
         except Exception as e:
             logger.error(f"Error loading settings: {e}", exc_info=True)
@@ -74,6 +103,7 @@ class SettingsDialog(BaseDialog):
             self.theme_settings.save_settings()
             self.cache_settings.save_settings()
             self.timezone_settings.save_settings()
+            self.llm_settings.save_settings()
             # Force settings to sync to disk
             self.settings.sync()
             logger.debug("Settings saved successfully")
@@ -88,7 +118,8 @@ class SettingsDialog(BaseDialog):
                 self.general_settings.validate(),
                 self.theme_settings.validate(),
                 self.cache_settings.validate(),
-                self.timezone_settings.validate()
+                self.timezone_settings.validate(),
+                self.llm_settings.validate()
             ])
             if valid:
                 # Save settings when validation passes
