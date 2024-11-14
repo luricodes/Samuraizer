@@ -86,6 +86,7 @@ class SettingsDialog(BaseDialog):
     def load_settings(self) -> None:
         """Load settings for all components."""
         try:
+            # Load settings for all groups regardless of current tab
             self.general_settings.load_settings()
             self.theme_settings.load_settings()
             self.cache_settings.load_settings()
@@ -99,6 +100,7 @@ class SettingsDialog(BaseDialog):
     def save_settings(self) -> None:
         """Save settings from all components."""
         try:
+            # Save settings for all groups regardless of current tab
             self.general_settings.save_settings()
             self.theme_settings.save_settings()
             self.cache_settings.save_settings()
@@ -112,17 +114,23 @@ class SettingsDialog(BaseDialog):
             self.show_error("Settings Error", f"Failed to save settings: {str(e)}")
 
     def validate(self) -> bool:
-        """Validate settings from all components."""
+        """Validate settings from the current tab only."""
         try:
-            valid = all([
-                self.general_settings.validate(),
-                self.theme_settings.validate(),
-                self.cache_settings.validate(),
-                self.timezone_settings.validate(),
-                self.llm_settings.validate()
-            ])
+            current_tab_index = self.tab_widget.currentIndex()
+            current_tab_text = self.tab_widget.tabText(current_tab_index)
+            
+            # Only validate the current tab's settings
+            if current_tab_text == "General":
+                valid = self.general_settings.validate() and self.theme_settings.validate()
+            elif current_tab_text == "System":
+                valid = self.cache_settings.validate() and self.timezone_settings.validate()
+            elif current_tab_text == "LLM API Settings":
+                valid = self.llm_settings.validate()
+            else:
+                valid = True
+            
             if valid:
-                # Save settings when validation passes
+                # Save all settings when validation passes
                 self.save_settings()
             return valid
         except Exception as e:
@@ -134,7 +142,13 @@ class SettingsDialog(BaseDialog):
         """Override accept to ensure settings are saved."""
         try:
             if self.validate():
+                # Save all settings before accepting
+                self.save_settings()
                 super().accept()
         except Exception as e:
             logger.error(f"Error accepting settings dialog: {e}", exc_info=True)
             self.show_error("Accept Error", str(e))
+
+    def get_main_window(self) -> Optional['MainWindow']:
+        """Get the main window instance."""
+        return self.parent()

@@ -37,6 +37,7 @@ class LLMSettingsGroup(QGroupBox):
         api_key_layout.addWidget(QLabel("API Key:"))
         self.api_key_input = QLineEdit()
         self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.api_key_input.setPlaceholderText("Enter your API key")
         api_key_layout.addWidget(self.api_key_input)
         layout.addLayout(api_key_layout)
 
@@ -127,6 +128,8 @@ class LLMSettingsGroup(QGroupBox):
             
         except Exception as e:
             logger.error(f"Error loading LLM settings: {e}")
+            if hasattr(self.parent(), 'show_error'):
+                self.parent().show_error("Settings Error", f"Failed to load LLM settings: {str(e)}")
 
     def save_settings(self) -> None:
         """Save current LLM settings."""
@@ -152,13 +155,19 @@ class LLMSettingsGroup(QGroupBox):
             
         except Exception as e:
             logger.error(f"Error saving LLM settings: {e}")
+            if hasattr(self.parent(), 'show_error'):
+                self.parent().show_error("Settings Error", f"Failed to save LLM settings: {str(e)}")
 
     def validate(self) -> bool:
         """Validate LLM settings."""
         try:
             # API key is required
             if not self.api_key_input.text().strip():
-                logger.error("API key is required")
+                if hasattr(self.parent(), 'show_error'):
+                    self.parent().show_error(
+                        "Validation Error",
+                        "API key is required for LLM services.\nPlease enter your API key."
+                    )
                 return False
             
             provider = self.provider_combo.currentText()
@@ -166,16 +175,26 @@ class LLMSettingsGroup(QGroupBox):
             # For custom provider, require model name and valid API base URL
             if provider == 'Custom':
                 if not self.model_combo.currentText().strip():
-                    logger.error("Model name is required for custom provider")
+                    if hasattr(self.parent(), 'show_error'):
+                        self.parent().show_error(
+                            "Validation Error",
+                            "Model name is required for custom provider."
+                        )
                     return False
                     
                 api_base = self.api_base_input.text().strip()
                 if not api_base.startswith(('http://', 'https://')):
-                    logger.error("Invalid API base URL")
+                    if hasattr(self.parent(), 'show_error'):
+                        self.parent().show_error(
+                            "Validation Error",
+                            "Invalid API base URL. Must start with http:// or https://"
+                        )
                     return False
             
             return True
             
         except Exception as e:
             logger.error(f"Error validating LLM settings: {e}")
+            if hasattr(self.parent(), 'show_error'):
+                self.parent().show_error("Validation Error", str(e))
             return False

@@ -54,6 +54,11 @@ output.json
 output.yaml
 output.xml
 logs/
+test.json
+test.yaml
+test.dot
+test.csv
+
 
 # MyPy
 .mypy_cache/

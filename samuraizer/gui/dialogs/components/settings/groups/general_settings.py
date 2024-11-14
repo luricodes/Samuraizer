@@ -1,10 +1,12 @@
-# samuraizer/gui/dialogs/components/settings/components/general_settings.py
+# samuraizer/gui/dialogs/components/settings/groups/general_settings.py
 
 from typing import Optional
 import logging
 from PyQt6.QtWidgets import (
-    QWidget, QFormLayout, QCheckBox
+    QWidget, QFormLayout, QCheckBox,
+    QLabel
 )
+from PyQt6.QtGui import QFont
 
 from ..base import BaseSettingsGroup
 
@@ -24,8 +26,20 @@ class GeneralSettingsGroup(BaseSettingsGroup):
             
             # Auto-save setting
             self.auto_save = QCheckBox()
-            self.auto_save.setToolTip("Saves the Output Options 'Output File' aswell as 'Output Format' for the next program start")
+            self.auto_save.setToolTip(
+                "Saves the Output Options 'Output File' as well as 'Output Format' "
+                "for the next program start"
+            )
             layout.addRow("Auto-save Output Options:", self.auto_save)
+            
+            # Add helper text
+            help_text = QLabel(
+                "When enabled, output settings will be remembered between sessions"
+            )
+            help_text.setStyleSheet("color: gray;")
+            help_text.setWordWrap(True)
+            help_text.setFont(QFont("Segoe UI", 9))
+            layout.addRow("", help_text)
             
             self.setLayout(layout)
             
@@ -55,3 +69,7 @@ class GeneralSettingsGroup(BaseSettingsGroup):
         except Exception as e:
             logger.error(f"Error saving general settings: {e}", exc_info=True)
             raise
+
+    def validate(self) -> bool:
+        """Validate general settings."""
+        return True  # General settings don't need validation

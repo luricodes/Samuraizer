@@ -24,8 +24,8 @@ def main() -> None:
         window = MainWindow()
         
         # Set up theme toggle function
-        def theme_toggle():
-            ThemeManager.toggle_theme(app, window)
+        def theme_toggle(theme=None):
+            ThemeManager.toggle_theme(app, window, theme)
         
         # Assign the theme toggle function to the window
         window.toggle_theme = theme_toggle

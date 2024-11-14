@@ -3,32 +3,41 @@
 import logging
 from typing import Optional
 from PyQt6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QComboBox,
-    QCheckBox, QLabel, QWidget
+    QWidget, QVBoxLayout, QComboBox,
+    QCheckBox, QLabel
 )
+from PyQt6.QtGui import QFont
 from zoneinfo import available_timezones
 
 from samuraizer.config.timezone_config import TimezoneConfigManager
+from ..base import BaseSettingsGroup
 
 logger = logging.getLogger(__name__)
 
-class TimezoneSettingsGroup(QGroupBox):
+class TimezoneSettingsGroup(BaseSettingsGroup):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
-        super().__init__("Timezone Settings", parent)
+        # Initialize timezone config before calling parent's __init__
         self.timezone_config = TimezoneConfigManager()
-        self.setup_ui()
+        super().__init__("Timezone Settings", parent)
 
     def setup_ui(self) -> None:
         """Set up the timezone settings UI."""
         layout = QVBoxLayout()
+        layout.setSpacing(10)
 
         # UTC checkbox
         self.use_utc_checkbox = QCheckBox("Use UTC for all timestamps")
+        self.use_utc_checkbox.setToolTip(
+            "When enabled, all timestamps will be displayed in UTC regardless of system timezone"
+        )
         self.use_utc_checkbox.stateChanged.connect(self._on_utc_changed)
         layout.addWidget(self.use_utc_checkbox)
 
         # Repository timezone selection
-        layout.addWidget(QLabel("Repository Timezone:"))
+        timezone_label = QLabel("Repository Timezone:")
+        timezone_label.setFont(QFont("Segoe UI", 9))
+        layout.addWidget(timezone_label)
+        
         self.timezone_combo = QComboBox()
         
         # Add system default as first option
@@ -45,11 +54,13 @@ class TimezoneSettingsGroup(QGroupBox):
         # Add description label
         self.description_label = QLabel()
         self.description_label.setWordWrap(True)
+        self.description_label.setStyleSheet("color: gray;")
+        self.description_label.setFont(QFont("Segoe UI", 9))
         layout.addWidget(self.description_label)
         
         self.setLayout(layout)
         
-        # Load current settings
+        # Load current settings and update description
         self.load_settings()
         self._update_description()
 
@@ -122,6 +133,7 @@ class TimezoneSettingsGroup(QGroupBox):
             
         except Exception as e:
             logger.error(f"Error loading timezone settings: {e}")
+            raise
 
     def save_settings(self) -> None:
         """Save current timezone settings."""
@@ -138,6 +150,7 @@ class TimezoneSettingsGroup(QGroupBox):
                     
         except Exception as e:
             logger.error(f"Error saving timezone settings: {e}")
+            raise
 
     def validate(self) -> bool:
         """Validate timezone settings."""

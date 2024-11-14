@@ -1,4 +1,4 @@
-# samuraizer/gui/dialogs/components/settings/components/theme_settings.py
+# samuraizer/gui/dialogs/components/settings/groups/theme_settings.py
 
 from typing import Optional
 import logging
@@ -10,6 +10,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ..base import BaseSettingsGroup
+from samuraizer.gui.app.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,16 @@ class ThemeSettingsGroup(BaseSettingsGroup):
             logger.error(f"Error setting up theme settings UI: {e}", exc_info=True)
             raise
 
+    def get_settings_dialog(self) -> Optional[QWidget]:
+        """Get the settings dialog by traversing up the widget hierarchy."""
+        parent = self.parent()
+        while parent is not None:
+            # Check if this parent is the settings dialog
+            if parent.__class__.__name__ == 'SettingsDialog':
+                return parent
+            parent = parent.parent()
+        return None
+
     def on_theme_changed(self, theme_name: str) -> None:
         """Handle theme selection changes."""
         try:
@@ -53,11 +64,16 @@ class ThemeSettingsGroup(BaseSettingsGroup):
             current_theme = self.settings.value("theme", "dark", str)
             
             if theme != current_theme:
-                # Get the main window (parent of the dialog)
-                dialog_parent = self.parent().parent()
-                if dialog_parent and hasattr(dialog_parent, 'toggle_theme'):
-                    # Call the parent window's theme toggle
-                    dialog_parent.toggle_theme()
+                # Save the theme first
+                ThemeManager.save_theme(theme)
+                
+                # Get the settings dialog and main window
+                settings_dialog = self.get_settings_dialog()
+                if settings_dialog and settings_dialog.parent():
+                    main_window = settings_dialog.parent()
+                    if hasattr(main_window, 'toggle_theme'):
+                        # Call the main window's theme toggle with the new theme
+                        main_window.toggle_theme(theme)
                     
         except Exception as e:
             logger.error(f"Error changing theme: {e}", exc_info=True)
@@ -68,7 +84,7 @@ class ThemeSettingsGroup(BaseSettingsGroup):
         """Load theme settings."""
         try:
             self.theme_combo.blockSignals(True)
-            current_theme = self.settings.value("theme", "dark", str)
+            current_theme = ThemeManager.get_saved_theme()
             theme_index = self.theme_combo.findText(
                 current_theme.capitalize(),
                 Qt.MatchFlag.MatchFixedString
@@ -83,8 +99,8 @@ class ThemeSettingsGroup(BaseSettingsGroup):
     def save_settings(self) -> None:
         """Save theme settings."""
         try:
-            # Theme settings are saved immediately when changed
-            pass
+            theme = self.theme_combo.currentText().lower()
+            ThemeManager.save_theme(theme)
         except Exception as e:
             logger.error(f"Error saving theme settings: {e}", exc_info=True)
             raise

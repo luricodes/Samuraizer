@@ -22,6 +22,7 @@ class ThemeManager:
         """Save the current theme to settings."""
         settings = QSettings()
         settings.setValue("theme", theme)
+        settings.sync()
     
     @classmethod
     def apply_theme(cls, app: QApplication, theme: str = "dark") -> None:
@@ -99,20 +100,31 @@ class ThemeManager:
             # Apply QPalette for better system integration
             app.setPalette(qdarktheme.load_palette(theme=theme))
             
+            # Force an update of all widgets
+            for widget in app.allWidgets():
+                widget.style().unpolish(widget)
+                widget.style().polish(widget)
+                widget.update()
+            
             logger.debug(f"{theme.capitalize()} theme applied successfully")
         except Exception as e:
             logger.error(f"Error applying theme: {e}")
     
     @classmethod
-    def toggle_theme(cls, app: QApplication, window) -> None:
-        """Toggle between light and dark themes.
+    def toggle_theme(cls, app: QApplication, window, theme: str = None) -> None:
+        """Toggle between light and dark themes or apply specific theme.
         
         Args:
             app: QApplication instance
             window: Main window instance that needs theme update notifications
+            theme: Optional specific theme to apply ("dark" or "light")
         """
-        current_theme = cls.get_saved_theme()
-        new_theme = "light" if current_theme == "dark" else "dark"
+        if theme is None:
+            current_theme = cls.get_saved_theme()
+            new_theme = "light" if current_theme == "dark" else "dark"
+        else:
+            new_theme = theme.lower()
+            
         cls.apply_theme(app, new_theme)
         
         # Update UI elements that need to reflect the theme change

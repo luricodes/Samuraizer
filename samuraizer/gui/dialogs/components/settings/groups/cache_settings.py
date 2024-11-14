@@ -1,4 +1,4 @@
-# samuraizer/gui/dialogs/components/settings/components/cache_settings.py
+# samuraizer/gui/dialogs/components/settings/groups/cache_settings.py
 
 from typing import Optional
 import logging
@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QMessageBox, QHBoxLayout
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
 from ..base import BaseSettingsGroup
@@ -37,6 +38,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
             )
             self.cache_warning.setStyleSheet("color: #FFA500;")  # Orange warning color
             self.cache_warning.setWordWrap(True)
+            self.cache_warning.setFont(QFont("Segoe UI", 9))
             self.cache_warning.hide()  # Initially hidden
             layout.addRow(self.cache_warning)
             
@@ -44,7 +46,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
             self.disable_cache = QCheckBox()
             self.disable_cache.setToolTip(
                 "Disable file analysis caching.\n"
-                "WARNING: This will significantly reduce performance running an Analyzis multiple times!"
+                "WARNING: This will significantly reduce performance running an Analysis multiple times!"
             )
             self.disable_cache.stateChanged.connect(self.on_cache_state_changed)
             layout.addRow("Disable caching:", self.disable_cache)
@@ -65,7 +67,8 @@ class CacheSettingsGroup(BaseSettingsGroup):
 
             # Current cache size label
             self.current_cache_size = QLabel()
-            self.current_cache_size.setStyleSheet("color: #808080;")  # Gray color
+            self.current_cache_size.setStyleSheet("color: gray;")
+            self.current_cache_size.setFont(QFont("Segoe UI", 9))
             layout.addRow("Current cache size:", self.current_cache_size)
             
             # Cache location with buttons in horizontal layout
@@ -83,6 +86,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
             layout.addRow("Cache location:", cache_layout)
             
             self.cache_path_label = QLabel()
+            self.cache_path_label.setFont(QFont("Segoe UI", 9))
             layout.addRow("", self.cache_path_label)
             
             self.setLayout(layout)
