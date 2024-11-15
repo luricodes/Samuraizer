@@ -1,10 +1,11 @@
- # QApplication setup and configuration
+# QApplication setup and configuration
 import sys
 import logging
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
 from .theme_manager import ThemeManager
+from .icons_manager import IconsManager
 from .logger import setup_logging
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,9 @@ def setup_application() -> QApplication:
     app.setApplicationVersion("1.0.0")
     app.setOrganizationName("Lucas Richert")
     app.setOrganizationDomain("lucasrichert.tech")
+    
+    # Initialize application icons
+    IconsManager.initialize(app)
     
     return app
 
@@ -40,6 +44,9 @@ def run_application(window_class) -> None:
         
         # Create main window
         window = window_class()
+        
+        # Set window icon
+        IconsManager.set_window_icon(window)
         
         # Set up theme toggle function
         def theme_toggle():
