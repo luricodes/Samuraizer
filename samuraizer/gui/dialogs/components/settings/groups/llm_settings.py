@@ -88,6 +88,7 @@ class LLMSettingsGroup(QGroupBox):
 
     def _on_provider_changed(self, provider: str) -> None:
         """Handle provider selection changes."""
+        logger.debug(f"Provider changed to: {provider}")
         # Update model choices
         self.model_combo.clear()
         models = self.llm_config.get_models(provider)
@@ -97,43 +98,53 @@ class LLMSettingsGroup(QGroupBox):
             self.model_combo.setPlaceholderText("Enter model name...")
             self.api_base_input.setEnabled(True)
             self.api_base_input.clear()
+            logger.debug("Enabled custom provider fields")
         else:
             self.model_combo.setEditable(False)
             self.model_combo.addItems(models)
             self.api_base_input.setText(self.llm_config.get_default_api_base(provider))
             self.api_base_input.setEnabled(False)
+            logger.debug(f"Set models for {provider}: {models}")
 
     def load_settings(self) -> None:
         """Load current LLM settings."""
         try:
+            logger.info("Loading LLM settings")
             config = self.llm_config.get_config()
+            logger.debug(f"Loaded config: {config}")
             
             # Set provider
             provider = config['provider']
             self.provider_combo.setCurrentText(provider)
+            logger.debug(f"Set provider to: {provider}")
             
             # Set API key
             self.api_key_input.setText(config['api_key'])
+            logger.debug("Set API key")
             
             # Set model
             if provider == 'Custom':
                 self.model_combo.setCurrentText(config.get('custom_model', ''))
+                logger.debug(f"Set custom model: {config.get('custom_model', '')}")
             else:
                 self.model_combo.setCurrentText(config['model'])
+                logger.debug(f"Set model: {config['model']}")
             
             # Set other values
             self.temperature_spin.setValue(config['temperature'])
             self.max_tokens_spin.setValue(config['max_tokens'])
             self.api_base_input.setText(config['api_base'])
+            logger.debug(f"Set temperature: {config['temperature']}, max_tokens: {config['max_tokens']}, api_base: {config['api_base']}")
             
         except Exception as e:
-            logger.error(f"Error loading LLM settings: {e}")
+            logger.error(f"Error loading LLM settings: {e}", exc_info=True)
             if hasattr(self.parent(), 'show_error'):
                 self.parent().show_error("Settings Error", f"Failed to load LLM settings: {str(e)}")
 
     def save_settings(self) -> None:
         """Save current LLM settings."""
         try:
+            logger.info("Saving LLM settings")
             provider = self.provider_combo.currentText()
             config = {
                 'provider': provider,
@@ -147,22 +158,28 @@ class LLMSettingsGroup(QGroupBox):
             if provider == 'Custom':
                 config['custom_model'] = self.model_combo.currentText()
                 config['model'] = ''
+                logger.debug(f"Saving custom model: {config['custom_model']}")
             else:
                 config['model'] = self.model_combo.currentText()
                 config['custom_model'] = ''
+                logger.debug(f"Saving model: {config['model']}")
             
+            logger.debug(f"Saving config: {config}")
             self.llm_config.save_config(config)
+            logger.info("LLM settings saved successfully")
             
         except Exception as e:
-            logger.error(f"Error saving LLM settings: {e}")
+            logger.error(f"Error saving LLM settings: {e}", exc_info=True)
             if hasattr(self.parent(), 'show_error'):
                 self.parent().show_error("Settings Error", f"Failed to save LLM settings: {str(e)}")
 
     def validate(self) -> bool:
         """Validate LLM settings."""
         try:
+            logger.info("Validating LLM settings")
             # API key is required
             if not self.api_key_input.text().strip():
+                logger.warning("API key is missing")
                 if hasattr(self.parent(), 'show_error'):
                     self.parent().show_error(
                         "Validation Error",
@@ -171,10 +188,12 @@ class LLMSettingsGroup(QGroupBox):
                 return False
             
             provider = self.provider_combo.currentText()
+            logger.debug(f"Validating provider: {provider}")
             
             # For custom provider, require model name and valid API base URL
             if provider == 'Custom':
                 if not self.model_combo.currentText().strip():
+                    logger.warning("Custom model name is missing")
                     if hasattr(self.parent(), 'show_error'):
                         self.parent().show_error(
                             "Validation Error",
@@ -184,17 +203,28 @@ class LLMSettingsGroup(QGroupBox):
                     
                 api_base = self.api_base_input.text().strip()
                 if not api_base.startswith(('http://', 'https://')):
+                    logger.warning("Invalid API base URL")
                     if hasattr(self.parent(), 'show_error'):
                         self.parent().show_error(
                             "Validation Error",
                             "Invalid API base URL. Must start with http:// or https://"
                         )
                     return False
+            else:
+                if not self.model_combo.currentText():
+                    logger.warning("Model selection is missing")
+                    if hasattr(self.parent(), 'show_error'):
+                        self.parent().show_error(
+                            "Validation Error",
+                            "Please select a model."
+                        )
+                    return False
             
+            logger.info("LLM settings validation passed")
             return True
             
         except Exception as e:
-            logger.error(f"Error validating LLM settings: {e}")
+            logger.error(f"Error validating LLM settings: {e}", exc_info=True)
             if hasattr(self.parent(), 'show_error'):
                 self.parent().show_error("Validation Error", str(e))
             return False

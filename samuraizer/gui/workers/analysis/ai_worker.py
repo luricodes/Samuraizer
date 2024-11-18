@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Any, Optional
 from PyQt6.QtCore import QObject, pyqtSignal
 import openai
+import anthropic
 import requests
 import json
 from pathlib import Path
@@ -83,9 +84,21 @@ class AIWorker(QObject):
                 
             provider = self.config.get('provider', 'OpenAI')
             api_key = self.config.get('api_key', '')
-            model = self.config.get('model', 'gpt-4-turbo-preview')
-            endpoint = self.config.get('endpoint', '')
+            api_base = self.config.get('api_base', '')
             max_tokens = self.config.get('max_tokens', 2000)
+            temperature = self.config.get('temperature', 0.7)
+            
+            # Get model based on provider
+            if provider == 'Custom':
+                model = self.config.get('custom_model', '')
+            else:
+                model = self.config.get('model', '')
+            
+            if not api_key:
+                raise ValueError("API key is required")
+                
+            if not model:
+                raise ValueError("Model selection is required")
             
             # Implement retry logic
             max_retries = 3
@@ -99,11 +112,15 @@ class AIWorker(QObject):
                 try:
                     # Call appropriate API based on provider
                     if provider == "OpenAI":
-                        result = self._call_openai_api(model, api_key, max_tokens)
+                        if api_base:
+                            openai.api_base = api_base
+                        result = self._call_openai_api(model, api_key, max_tokens, temperature)
                     elif provider == "Anthropic":
-                        result = self._call_anthropic_api(model, api_key, max_tokens)
+                        result = self._call_anthropic_api(model, api_key, max_tokens, temperature)
+                    elif provider == "Custom":
+                        result = self._call_custom_api(model, api_key, api_base, max_tokens, temperature)
                     else:
-                        result = self._call_custom_api(model, api_key, endpoint, max_tokens)
+                        raise ValueError(f"Unsupported provider: {provider}")
                     
                     # Cache successful result
                     self._save_to_cache(cache_key, result)
@@ -124,7 +141,7 @@ class AIWorker(QObject):
             logger.error(f"Error in AI processing: {e}", exc_info=True)
             self.error.emit(str(e))
             
-    def _call_openai_api(self, model: str, api_key: str, max_tokens: int) -> str:
+    def _call_openai_api(self, model: str, api_key: str, max_tokens: int, temperature: float) -> str:
         """Make call to OpenAI API."""
         self.progress.emit("Analyzing code with OpenAI...")
         openai.api_key = api_key
@@ -143,38 +160,50 @@ class AIWorker(QObject):
             response = openai.ChatCompletion.create(
                 model=model,
                 messages=[{"role": "user", "content": chunk}],
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                temperature=temperature
             )
             full_response.append(response.choices[0].message.content)
             
         return "\n".join(full_response)
         
-    def _call_anthropic_api(self, model: str, api_key: str, max_tokens: int) -> str:
-        """Make call to Anthropic API."""
+    def _call_anthropic_api(self, model: str, api_key: str, max_tokens: int, temperature: float) -> str:
+        """Make call to Anthropic API using official client library."""
         self.progress.emit("Analyzing code with Claude...")
-        headers = {
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
         
-        data = {
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": self.prompt}]
-        }
+        try:
+            # Initialize Anthropic client
+            client = anthropic.Anthropic(api_key=api_key)
+            
+            # Create message using the official client
+            message = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": self.prompt
+                    }
+                ]
+            )
+            
+            # Extract the response text
+            if message.content:
+                return message.content[0].text
+            else:
+                raise ValueError("No content in response")
+                
+        except Exception as e:
+            logger.error(f"Anthropic API call failed: {e}")
+            raise
         
-        response = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers=headers,
-            json=data
-        )
-        
-        return response.json()["content"][0]["text"]
-        
-    def _call_custom_api(self, model: str, api_key: str, endpoint: str, max_tokens: int) -> str:
+    def _call_custom_api(self, model: str, api_key: str, api_base: str, max_tokens: int, temperature: float) -> str:
         """Make call to custom API endpoint."""
-        self.progress.emit("Analyzing code...")
+        if not api_base:
+            raise ValueError("API base URL is required for custom provider")
+            
+        self.progress.emit("Analyzing code with custom provider...")
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -183,10 +212,15 @@ class AIWorker(QObject):
         data = {
             "model": model,
             "prompt": self.prompt,
-            "max_tokens": max_tokens
+            "max_tokens": max_tokens,
+            "temperature": temperature
         }
         
-        response = requests.post(endpoint, headers=headers, json=data)
+        response = requests.post(api_base, headers=headers, json=data)
+        
+        if response.status_code != 200:
+            raise ValueError(f"API request failed: {response.text}")
+            
         return response.json()["response"]
         
     def _split_prompt(self, prompt: str, max_tokens: int) -> list[str]:

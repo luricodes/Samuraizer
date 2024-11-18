@@ -1,4 +1,4 @@
-# samuraizer/gui/widgets/analysis_viewer/details_panel.py
+# samuraizer/gui/windows/main/panels/details_panel.py
 
 import logging
 from typing import Optional, Dict, Any, List
@@ -293,13 +293,31 @@ class DetailsPanel(QWidget):
             # Get LLM settings from new config manager
             config = self.llm_config.get_config()
             api_key = config['api_key']
-            model = config['model']
+            provider = config['provider']
+            model = config['model'] if provider != 'Custom' else config.get('custom_model', '')
             
+            # Validate LLM settings
             if not api_key:
                 QMessageBox.warning(
                     self,
                     "Configuration Error",
-                    "Please configure LLM settings in Settings > LLM API Settings"
+                    "Please configure your API key in Settings > LLM API Settings"
+                )
+                return
+                
+            if not model:
+                QMessageBox.warning(
+                    self,
+                    "Configuration Error",
+                    "Please select a model in Settings > LLM API Settings"
+                )
+                return
+                
+            if provider == 'Custom' and not config.get('api_base'):
+                QMessageBox.warning(
+                    self,
+                    "Configuration Error",
+                    "Please configure the API base URL for your custom provider in Settings > LLM API Settings"
                 )
                 return
                 
@@ -329,6 +347,7 @@ class DetailsPanel(QWidget):
             # Create worker and thread
             self.ai_thread = QThread()
             self.ai_worker = AIWorker(prompt, {
+                'provider': provider,
                 'api_key': api_key,
                 'model': model,
                 'temperature': config['temperature'],

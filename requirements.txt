@@ -23,6 +23,7 @@ graphviz>=0.20.1
 PyQtDarkTheme
 openai
 requests
+anthropic>=0.18.1  # Added for Claude API support
 
 
 # Platform-specific magic package
