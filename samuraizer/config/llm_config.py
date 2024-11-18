@@ -23,12 +23,16 @@ class LLMConfigManager:
         },
         'Anthropic': {
             'models': [
-                'claude-3-opus-20240229',
-                'claude-3-sonnet-20240229',
-                'claude-3-haiku-20240307'
+                'claude-3-opus-20240229',  # Most capable model
+                'claude-3-sonnet-20240229',  # Balanced performance and cost
+                'claude-3-haiku-20240307'   # Fastest model
             ],
             'default_model': 'claude-3-haiku-20240307',
-            'api_base': 'https://api.anthropic.com/v1'
+            'api_base': 'https://api.anthropic.com/v1',
+            'rate_limits': {
+                'rpm': 60,  # Requests per minute
+                'tpm': 100000  # Tokens per minute (default tier)
+            }
         },
         'Custom': {
             'models': [],
@@ -44,7 +48,8 @@ class LLMConfigManager:
         'temperature': 0.7,
         'max_tokens': 2000,
         'api_base': PROVIDERS['OpenAI']['api_base'],
-        'custom_model': ''  # For custom provider
+        'custom_model': '',  # For custom provider
+        'system_message': 'You are an expert code analyzer. Analyze the provided code thoroughly and provide detailed insights.'
     }
     
     def __init__(self) -> None:
@@ -173,7 +178,10 @@ class LLMConfigManager:
         return self.config['provider']
     
     def set_provider(self, provider: str) -> None:
-        """Set the provider."""
+        """Set the provider and update related settings."""
+        if provider not in self.PROVIDERS:
+            raise ValueError(f"Unsupported provider: {provider}")
+            
         self.config['provider'] = provider
         # Update API base if not custom
         if provider != 'Custom':
@@ -201,6 +209,10 @@ class LLMConfigManager:
         if self.config['provider'] == 'Custom':
             self.config['custom_model'] = model
         else:
+            # Validate model exists for provider
+            available_models = self.get_models(self.config['provider'])
+            if model not in available_models:
+                raise ValueError(f"Model {model} not available for provider {self.config['provider']}")
             self.config['model'] = model
         self.save_config(self.config)
     
@@ -210,6 +222,8 @@ class LLMConfigManager:
     
     def set_temperature(self, temperature: float) -> None:
         """Set the temperature value."""
+        if not 0 <= temperature <= 1:
+            raise ValueError("Temperature must be between 0 and 1")
         self.config['temperature'] = temperature
         self.save_config(self.config)
     
@@ -219,6 +233,8 @@ class LLMConfigManager:
     
     def set_max_tokens(self, max_tokens: int) -> None:
         """Set the max tokens value."""
+        if max_tokens < 1:
+            raise ValueError("Max tokens must be greater than 0")
         self.config['max_tokens'] = max_tokens
         self.save_config(self.config)
     
@@ -229,4 +245,13 @@ class LLMConfigManager:
     def set_api_base(self, api_base: str) -> None:
         """Set the API base URL."""
         self.config['api_base'] = api_base
+        self.save_config(self.config)
+    
+    def get_system_message(self) -> str:
+        """Get the system message."""
+        return self.config.get('system_message', self.DEFAULT_CONFIG['system_message'])
+    
+    def set_system_message(self, message: str) -> None:
+        """Set the system message."""
+        self.config['system_message'] = message
         self.save_config(self.config)

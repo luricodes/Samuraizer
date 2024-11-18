@@ -1,8 +1,10 @@
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from PyQt6.QtCore import QObject, pyqtSignal
 import openai
 import anthropic
+from anthropic._exceptions import APIError, APIStatusError, APITimeoutError, RateLimitError
+from anthropic.types import MessageParam, ContentBlock
 import requests
 import json
 from pathlib import Path
@@ -100,9 +102,10 @@ class AIWorker(QObject):
             if not model:
                 raise ValueError("Model selection is required")
             
-            # Implement retry logic
+            # Implement retry logic with exponential backoff
             max_retries = 3
-            retry_delay = 1  # seconds
+            base_delay = 1  # Initial delay in seconds
+            max_delay = 16  # Maximum delay in seconds
             
             for attempt in range(max_retries):
                 if self._stop_requested:
@@ -128,14 +131,26 @@ class AIWorker(QObject):
                     self.finished.emit(result)
                     return
                     
-                except Exception as e:
+                except RateLimitError as e:
+                    delay = min(base_delay * (2 ** attempt), max_delay)
                     if attempt < max_retries - 1:
-                        logger.warning(f"Attempt {attempt + 1} failed: {e}")
-                        self.progress.emit(f"Retrying analysis ({attempt + 2}/{max_retries})")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
+                        logger.warning(f"Rate limit hit (attempt {attempt + 1}): {e}")
+                        self.progress.emit(f"Rate limit reached. Retrying in {delay} seconds...")
+                        time.sleep(delay)
                     else:
                         raise
+                except (APITimeoutError, APIError) as e:
+                    delay = min(base_delay * (2 ** attempt), max_delay)
+                    if attempt < max_retries - 1:
+                        logger.warning(f"API error (attempt {attempt + 1}): {e}")
+                        self.progress.emit(f"Retrying analysis ({attempt + 2}/{max_retries})")
+                        time.sleep(delay)
+                    else:
+                        raise
+                except APIStatusError as e:
+                    # Don't retry on status errors (like invalid API key)
+                    logger.error(f"API status error: {e}")
+                    raise
             
         except Exception as e:
             logger.error(f"Error in AI processing: {e}", exc_info=True)
@@ -175,22 +190,39 @@ class AIWorker(QObject):
             # Initialize Anthropic client
             client = anthropic.Anthropic(api_key=api_key)
             
+            # Prepare system message for code analysis
+            system_message = "You are an expert code analyzer. Analyze the provided code thoroughly and provide detailed insights."
+            
+            # Create message with proper structure
+            messages: List[MessageParam] = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": self.prompt
+                        }
+                    ]
+                }
+            ]
+            
             # Create message using the official client
             message = client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": self.prompt
-                    }
-                ]
+                system=system_message,
+                messages=messages
             )
             
             # Extract the response text
             if message.content:
-                return message.content[0].text
+                # Get all text content from response
+                response_text = []
+                for block in message.content:
+                    if isinstance(block, ContentBlock) and block.type == "text":
+                        response_text.append(block.text)
+                return "\n".join(response_text)
             else:
                 raise ValueError("No content in response")
                 
