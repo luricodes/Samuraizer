@@ -16,8 +16,19 @@ logger = logging.getLogger(__name__)
 class LLMSettingsGroup(QGroupBox):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__("LLM API Settings", parent)
-        self.llm_config = LLMConfigManager()
+        # Get LLMConfigManager instance from MainWindow
+        main_window = self._get_main_window()
+        self.llm_config = main_window.llm_config_manager if main_window else LLMConfigManager()
         self.setup_ui()
+
+    def _get_main_window(self):
+        """Get the main window instance by traversing up the widget hierarchy."""
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'llm_config_manager'):
+                return parent
+            parent = parent.parent()
+        return None
 
     def setup_ui(self) -> None:
         """Set up the LLM settings UI."""
@@ -84,7 +95,30 @@ class LLMSettingsGroup(QGroupBox):
         layout.addWidget(self.description_label)
 
         self.setLayout(layout)
-        self.load_settings()
+
+        # Initialize UI with current config
+        config = self.llm_config.get_config()
+        self._update_ui_from_config(config)
+
+    def _update_ui_from_config(self, config: dict) -> None:
+        """Update UI elements with values from config."""
+        # Set provider
+        provider = config['provider']
+        self.provider_combo.setCurrentText(provider)
+        
+        # Set API key
+        self.api_key_input.setText(config['api_key'])
+        
+        # Set model
+        if provider == 'Custom':
+            self.model_combo.setCurrentText(config.get('custom_model', ''))
+        else:
+            self.model_combo.setCurrentText(config['model'])
+        
+        # Set other values
+        self.temperature_spin.setValue(config['temperature'])
+        self.max_tokens_spin.setValue(config['max_tokens'])
+        self.api_base_input.setText(config['api_base'])
 
     def _on_provider_changed(self, provider: str) -> None:
         """Handle provider selection changes."""
@@ -109,33 +143,10 @@ class LLMSettingsGroup(QGroupBox):
     def load_settings(self) -> None:
         """Load current LLM settings."""
         try:
-            logger.info("Loading LLM settings")
+            logger.debug("Loading LLM settings")
             config = self.llm_config.get_config()
-            logger.debug(f"Loaded config: {config}")
-            
-            # Set provider
-            provider = config['provider']
-            self.provider_combo.setCurrentText(provider)
-            logger.debug(f"Set provider to: {provider}")
-            
-            # Set API key
-            self.api_key_input.setText(config['api_key'])
-            logger.debug("Set API key")
-            
-            # Set model
-            if provider == 'Custom':
-                self.model_combo.setCurrentText(config.get('custom_model', ''))
-                logger.debug(f"Set custom model: {config.get('custom_model', '')}")
-            else:
-                self.model_combo.setCurrentText(config['model'])
-                logger.debug(f"Set model: {config['model']}")
-            
-            # Set other values
-            self.temperature_spin.setValue(config['temperature'])
-            self.max_tokens_spin.setValue(config['max_tokens'])
-            self.api_base_input.setText(config['api_base'])
-            logger.debug(f"Set temperature: {config['temperature']}, max_tokens: {config['max_tokens']}, api_base: {config['api_base']}")
-            
+            self._update_ui_from_config(config)
+            logger.debug("LLM settings loaded successfully")
         except Exception as e:
             logger.error(f"Error loading LLM settings: {e}", exc_info=True)
             if hasattr(self.parent(), 'show_error'):
@@ -144,7 +155,7 @@ class LLMSettingsGroup(QGroupBox):
     def save_settings(self) -> None:
         """Save current LLM settings."""
         try:
-            logger.info("Saving LLM settings")
+            logger.debug("Saving LLM settings")
             provider = self.provider_combo.currentText()
             config = {
                 'provider': provider,
@@ -166,7 +177,7 @@ class LLMSettingsGroup(QGroupBox):
             
             logger.debug(f"Saving config: {config}")
             self.llm_config.save_config(config)
-            logger.info("LLM settings saved successfully")
+            logger.debug("LLM settings saved successfully")
             
         except Exception as e:
             logger.error(f"Error saving LLM settings: {e}", exc_info=True)
@@ -176,7 +187,7 @@ class LLMSettingsGroup(QGroupBox):
     def validate(self) -> bool:
         """Validate LLM settings."""
         try:
-            logger.info("Validating LLM settings")
+            logger.debug("Validating LLM settings")
             # API key is required
             if not self.api_key_input.text().strip():
                 logger.warning("API key is missing")
@@ -220,7 +231,7 @@ class LLMSettingsGroup(QGroupBox):
                         )
                     return False
             
-            logger.info("LLM settings validation passed")
+            logger.debug("LLM settings validation passed")
             return True
             
         except Exception as e:

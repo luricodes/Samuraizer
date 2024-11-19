@@ -76,23 +76,22 @@ class SettingsDialog(BaseDialog):
             # Add tab widget to main layout
             self.main_layout.addWidget(self.tab_widget)
             
-            # Load settings
-            self.load_settings()
+            # Load all settings initially
+            self.load_all_settings()
             
         except Exception as e:
             logger.error(f"Error setting up settings dialog UI: {e}", exc_info=True)
             self.show_error("UI Error", f"Failed to initialize settings dialog: {str(e)}")
 
-    def load_settings(self) -> None:
+    def load_all_settings(self) -> None:
         """Load settings for all components."""
         try:
-            # Load settings for all groups regardless of current tab
             self.general_settings.load_settings()
             self.theme_settings.load_settings()
             self.cache_settings.load_settings()
             self.timezone_settings.load_settings()
             self.llm_settings.load_settings()
-            logger.debug("Settings loaded successfully")
+            logger.debug("All settings loaded successfully")
         except Exception as e:
             logger.error(f"Error loading settings: {e}", exc_info=True)
             self.show_error("Settings Error", f"Failed to load settings: {str(e)}")
@@ -100,12 +99,12 @@ class SettingsDialog(BaseDialog):
     def save_settings(self) -> None:
         """Save settings from all components."""
         try:
-            # Save settings for all groups regardless of current tab
             self.general_settings.save_settings()
             self.theme_settings.save_settings()
             self.cache_settings.save_settings()
             self.timezone_settings.save_settings()
             self.llm_settings.save_settings()
+            
             # Force settings to sync to disk
             self.settings.sync()
             logger.debug("Settings saved successfully")
@@ -114,24 +113,15 @@ class SettingsDialog(BaseDialog):
             self.show_error("Settings Error", f"Failed to save settings: {str(e)}")
 
     def validate(self) -> bool:
-        """Validate settings from the current tab only."""
+        """Validate settings from all components."""
         try:
-            current_tab_index = self.tab_widget.currentIndex()
-            current_tab_text = self.tab_widget.tabText(current_tab_index)
-            
-            # Only validate the current tab's settings
-            if current_tab_text == "General":
-                valid = self.general_settings.validate() and self.theme_settings.validate()
-            elif current_tab_text == "System":
-                valid = self.cache_settings.validate() and self.timezone_settings.validate()
-            elif current_tab_text == "LLM API Settings":
-                valid = self.llm_settings.validate()
-            else:
-                valid = True
-            
-            if valid:
-                # Save all settings when validation passes
-                self.save_settings()
+            valid = (
+                self.general_settings.validate() and
+                self.theme_settings.validate() and
+                self.cache_settings.validate() and
+                self.timezone_settings.validate() and
+                self.llm_settings.validate()
+            )
             return valid
         except Exception as e:
             logger.error(f"Settings validation error: {e}", exc_info=True)
