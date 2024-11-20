@@ -36,7 +36,16 @@ class RepositorySelectionWidget(QWidget):
         # Create GitHub repository widget
         self.github_widget = GitHubWidget()
         self.github_widget.repository_cloned.connect(self.onGitHubRepoCloned)
-        self.github_widget.repositoryCloned = pyqtSignal(str)
+        # Removed the incorrect signal definition below
+        # self.github_widget.repositoryCloned = pyqtSignal(str)
+        
+        # Create repository path line edit
+        self.repo_path = QLineEdit()
+        self.repo_path.setReadOnly(True)
+        repo_path_layout = QHBoxLayout()
+        repo_path_label = QLabel("Repository Path:")
+        repo_path_layout.addWidget(repo_path_label)
+        repo_path_layout.addWidget(self.repo_path)
         
         # Create tab widget
         self.tab_widget = QTabWidget()
@@ -45,10 +54,11 @@ class RepositorySelectionWidget(QWidget):
         self.tab_widget.addTab(self.repo_list_widget, "Repository List")
         self.tab_widget.addTab(self.github_widget, "GitHub Repository")
         
-        # Add tab widget to main layout
+        # Add tab widget and repo path to main layout
         group = QGroupBox("Repository Selection")
         group_layout = QVBoxLayout()
         group_layout.addWidget(self.tab_widget)
+        group_layout.addLayout(repo_path_layout)
         group.setLayout(group_layout)
         
         main_layout.addWidget(group)
@@ -56,22 +66,27 @@ class RepositorySelectionWidget(QWidget):
     def on_repository_selected(self, repo_path: str):
         """Handle repository selection from the list."""
         self.tab_widget.setCurrentWidget(self.repo_list_widget)
+        self.repo_path.setText(repo_path)
         self.pathChanged.emit(repo_path)
         logger.info(f"Selected repository: {repo_path}")
     
     def on_repository_added(self, repo_path: str):
         """Handle addition of a new repository."""
+        self.repo_path.setText(repo_path)
         self.pathChanged.emit(repo_path)
         logger.info(f"Added repository: {repo_path}")
     
     def on_repository_removed(self, repo_path: str):
         """Handle removal of a repository."""
+        if self.repo_path.text() == repo_path:
+            self.repo_path.clear()
         logger.info(f"Removed repository: {repo_path}")
     
     def onGitHubRepoCloned(self, repo_path: str):
         """Handle when a GitHub repository is successfully cloned."""
         self.repo_list_widget.repositories.append(repo_path)
         self.repo_list_widget.list_widget.addItem(repo_path)
+        self.repo_path.setText(repo_path)
         self.pathChanged.emit(repo_path)
         logger.info(f"Cloned GitHub repository: {repo_path}")
     
@@ -117,6 +132,14 @@ class RepositorySelectionWidget(QWidget):
             return True
         except (PermissionError, OSError):
             return False
+    
+    def set_repository_path(self, path: str):
+        """Set the repository path."""
+        self.repo_path.setText(path)
+    
+    def get_repository_path(self) -> str:
+        """Get the repository path."""
+        return self.repo_path.text()
     
     def closeEvent(self, event):
         """Handle widget closure."""

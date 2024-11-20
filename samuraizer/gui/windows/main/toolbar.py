@@ -1,4 +1,3 @@
-# toolbar.py
 from typing import TYPE_CHECKING, Optional
 import logging
 from PyQt6.QtWidgets import QToolBar
@@ -41,13 +40,6 @@ class MainToolBar(QToolBar):
     def setup_actions(self) -> None:
         """Set up toolbar actions."""
         try:
-            # Open Repository Action
-            open_action = QAction("Open Repository", self)
-            open_action.setStatusTip("Open a repository for analysis")
-            open_action.triggered.connect(self.main_window.open_repository)
-            self.addAction(open_action)
-            self.addSeparator()
-
             # Settings Action
             settings_action = QAction("Settings", self)
             settings_action.setStatusTip("Configure application settings")

@@ -1,4 +1,4 @@
-# samuraizer/gui/widgets/options/analysis_options.py
+# samuraizer/gui/widgets/configuration/analysis_options.py
 
 import logging
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
@@ -54,7 +54,7 @@ class AnalysisOptionsWidget(QWidget):
             # Load last used repository
             last_repo = self.settings.value("analysis/last_repository", "")
             if last_repo:
-                self.repository_widget.repo_path.setText(last_repo)
+                self.repository_widget.set_repository_path(last_repo)
 
             # Load other settings with defaults
             self.analysis_config_widget.max_size.setValue(
@@ -93,7 +93,7 @@ class AnalysisOptionsWidget(QWidget):
 
     def validateInputs(self) -> bool:
         """Validate the analysis options."""
-        repo_path = self.repository_widget.repo_path.text().strip()
+        repo_path = self.repository_widget.get_repository_path().strip()
         if not repo_path:
             return False
         if not Path(repo_path).exists():
@@ -103,7 +103,7 @@ class AnalysisOptionsWidget(QWidget):
     def getConfiguration(self) -> dict:
         """Get the current configuration as a dictionary."""
         return {
-            'repository_path': self.repository_widget.repo_path.text(),
+            'repository_path': self.repository_widget.get_repository_path(),
             'max_file_size': self.analysis_config_widget.max_size.value(),
             'include_binary': self.analysis_config_widget.include_binary.isChecked(),
             'follow_symlinks': self.analysis_config_widget.follow_symlinks.isChecked(),

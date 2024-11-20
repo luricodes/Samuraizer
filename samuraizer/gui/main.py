@@ -1,11 +1,10 @@
-# samuraizer/gui/main.py
 #!/usr/bin/env python3
 import sys
 import logging
 from .app.application import setup_application
 from .app.logger import setup_logging
 from .app.theme_manager import ThemeManager
-from .widgets.configuration.repository.github.utils.translations import TranslationManager
+from .utils.translations import TranslationManager
 from .windows import MainWindow
 
 def main() -> None:

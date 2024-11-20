@@ -3,6 +3,7 @@
 import logging
 from typing import Optional, Dict
 from pathlib import Path
+import shutil  # Added for directory operations
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
@@ -88,10 +89,15 @@ class GitHubWidget(QWidget):
 
     def open_authentication(self):
         """Open the TokenInputWidget for user authentication."""
-        self.token_input_widget = TokenInputWidget(self.auth_manager)
-        self.token_input_widget.setWindowTitle("GitHub Authentication")
-        self.token_input_widget.setFixedSize(400, 150)
-        self.token_input_widget.show()
+        try:
+            self.token_input_widget = TokenInputWidget(self.auth_manager)
+            self.token_input_widget.setWindowTitle("GitHub Authentication")
+            self.token_input_widget.setFixedSize(400, 150)
+            self.token_input_widget.show()
+            logger.debug("Opened GitHub Authentication dialog.")
+        except Exception as e:
+            logger.error(f"Failed to open authentication dialog: {e}")
+            QMessageBox.critical(self, "Authentication Error", f"Failed to open authentication dialog:\n{str(e)}")
 
     def _validate_url(self, url: str) -> None:
         """Validate the GitHub repository URL and fetch repository information."""
@@ -107,42 +113,53 @@ class GitHubWidget(QWidget):
         if is_valid:
             self.url_input.setStyleSheet("")
             self.status_widget.update_status("Fetching repository information...", show_progress=True)
+            logger.debug(f"Valid GitHub URL detected: {url}")
             
-            # Fetch repository information
-            self.repo_info = fetch_repo_info(url, self.auth_manager.get_access_token())
-            if self.repo_info:
-                # Update status with repository information
-                info_text = (
-                    f"Repository: {self.repo_info['name']}\n"
-                    f"Owner: {self.repo_info['owner']}\n"
-                    f"Stars: {self.repo_info['stars']}, Forks: {self.repo_info['forks']}"
-                )
-                if self.repo_info['description']:
-                    info_text += f"\nDescription: {self.repo_info['description']}"
-                self.status_widget.update_status(info_text, show_progress=False)
-                
-                # Fetch and populate branches
-                branches = get_repo_branches(url, self.auth_manager.get_access_token())
-                if branches:
-                    self.branch_combo.clear()
-                    self.branch_combo.addItem("default")
-                    self.branch_combo.addItems(branches)
-                    default_branch = self.repo_info['default_branch']
-                    default_index = self.branch_combo.findText(default_branch)
-                    if default_index >= 0:
-                        self.branch_combo.setCurrentIndex(default_index)
-                
-                self.clone_btn.setEnabled(True)
-                self.branch_combo.setEnabled(True)
-            else:
-                self.status_widget.update_status("Repository not found or inaccessible", show_progress=False)
+            try:
+                # Fetch repository information
+                self.repo_info = fetch_repo_info(url, self.auth_manager.get_access_token())
+                if self.repo_info:
+                    # Update status with repository information
+                    info_text = (
+                        f"Repository: {self.repo_info.get('name', 'N/A')}\n"
+                        f"Owner: {self.repo_info.get('owner', 'N/A')}\n"
+                        f"Stars: {self.repo_info.get('stars', 0)}, Forks: {self.repo_info.get('forks', 0)}"
+                    )
+                    if self.repo_info.get('description'):
+                        info_text += f"\nDescription: {self.repo_info['description']}"
+                    self.status_widget.update_status(info_text, show_progress=False)
+                    logger.info(f"Fetched repository info: {self.repo_info.get('name')}")
+                    
+                    # Fetch and populate branches
+                    branches = get_repo_branches(url, self.auth_manager.get_access_token())
+                    if branches:
+                        self.branch_combo.clear()
+                        self.branch_combo.addItem("default")
+                        self.branch_combo.addItems(branches)
+                        default_branch = self.repo_info.get('default_branch', 'main')
+                        default_index = self.branch_combo.findText(default_branch)
+                        if default_index >= 0:
+                            self.branch_combo.setCurrentIndex(default_index)
+                        logger.debug(f"Available branches: {branches}")
+                    
+                    self.clone_btn.setEnabled(True)
+                    self.branch_combo.setEnabled(True)
+                else:
+                    self.status_widget.update_status("Repository not found or inaccessible", show_progress=False)
+                    self.clone_btn.setEnabled(False)
+                    self.branch_combo.setEnabled(False)
+                    logger.warning("Repository info could not be fetched.")
+            except Exception as e:
+                self.status_widget.update_status("Failed to fetch repository information", show_progress=False)
                 self.clone_btn.setEnabled(False)
                 self.branch_combo.setEnabled(False)
+                logger.error(f"Error fetching repository information: {e}")
         else:
             self.url_input.setStyleSheet("border: 1px solid red;")
             self.status_widget.update_status("Invalid GitHub repository URL", show_progress=False)
             self.clone_btn.setEnabled(False)
             self.branch_combo.setEnabled(False)
+            logger.warning(f"Invalid GitHub URL entered: {url}")
 
         self.status_widget.show()
 
@@ -152,6 +169,7 @@ class GitHubWidget(QWidget):
         
         if not url:
             QMessageBox.warning(self, "Invalid URL", "Please enter a valid GitHub repository URL")
+            logger.warning("Clone attempted with empty URL.")
             return
 
         # Update UI state
@@ -160,36 +178,47 @@ class GitHubWidget(QWidget):
         self.url_input.setEnabled(False)
         self.branch_combo.setEnabled(False)
         self.auth_btn.setEnabled(False)
-
+        logger.info(f"Initiating clone for repository: {url}")
+        
         # Create temporary directory for cloning
         try:
             self.temp_dir = Path.home() / ".samuraizer" / "temp" / "github_repos"
             self.temp_dir.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Temporary directory created at: {self.temp_dir}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to create temporary directory: {str(e)}")
+            logger.error(f"Failed to create temporary directory: {e}")
             self._reset_ui_state()
             return
 
         # Start clone operation
-        branch = self.branch_combo.currentText() if self.branch_combo.currentText() != "default" else None
-        access_token = self.auth_manager.get_access_token()
-        self.clone_worker = GitCloneWorker(url, str(self.temp_dir), branch, access_token=access_token)
-        self.clone_worker.progress.connect(self.status_widget.update_status)
-        self.clone_worker.progress_percentage.connect(self.status_widget.update_progress)
-        self.clone_worker.error.connect(self._handle_clone_error)
-        self.clone_worker.finished.connect(self._handle_clone_success)
-        self.clone_worker.start()
+        try:
+            branch = self.branch_combo.currentText() if self.branch_combo.currentText() != "default" else None
+            access_token = self.auth_manager.get_access_token()
+            self.clone_worker = GitCloneWorker(url, str(self.temp_dir), branch, access_token=access_token)
+            self.clone_worker.progress.connect(self.status_widget.update_status)
+            self.clone_worker.progress_percentage.connect(self.status_widget.update_progress)
+            self.clone_worker.error.connect(self._handle_clone_error)
+            self.clone_worker.finished.connect(self._handle_clone_success)
+            self.clone_worker.start()
+            logger.info(f"Clone worker started for branch: {branch}")
+        except Exception as e:
+            QMessageBox.critical(self, "Clone Error", f"Failed to start clone operation:\n{str(e)}")
+            logger.error(f"Failed to start clone operation: {e}")
+            self._reset_ui_state()
 
     def _handle_clone_error(self, error_message: str):
         """Handle clone operation errors."""
         self.status_widget.update_status(f"Error: {error_message}", show_progress=False)
         QMessageBox.critical(self, "Clone Error", f"Failed to clone repository:\n{error_message}")
+        logger.error(f"Clone operation failed: {error_message}")
         self._reset_ui_state()
 
     def _handle_clone_success(self, repo_path: str):
         """Handle successful clone operation."""
         self.status_widget.update_status("Repository cloned successfully!", show_progress=False)
         self.repository_cloned.emit(repo_path)
+        logger.info(f"Repository cloned successfully at: {repo_path}")
         self._reset_ui_state()
         self.url_input.clear()
         self.branch_combo.setCurrentText("default")
@@ -201,21 +230,27 @@ class GitHubWidget(QWidget):
         self.branch_combo.setEnabled(True)
         self.auth_btn.setEnabled(True)
         self.status_widget.clear()
+        logger.debug("UI state has been reset.")
 
     def cleanup(self):
         """Clean up temporary resources."""
-        if self.clone_worker and self.clone_worker.isRunning():
-            self.clone_worker.stop()
-            self.clone_worker.wait()
-            
-        if self.temp_dir and Path(self.temp_dir).exists():
+        try:
+            if self.clone_worker and self.clone_worker.isRunning():
+                self.clone_worker.stop()
+                self.clone_worker.wait()
+                logger.debug("Clone worker has been stopped.")
+        except Exception as e:
+            logger.error(f"Error stopping clone worker: {e}")
+        
+        if self.temp_dir and self.temp_dir.exists():
             try:
-                import shutil
                 shutil.rmtree(self.temp_dir)
+                logger.debug(f"Temporary directory {self.temp_dir} has been removed.")
             except Exception as e:
                 logger.error(f"Failed to cleanup temporary directory: {e}")
 
     def closeEvent(self, event):
         """Handle widget closure."""
         self.cleanup()
+        logger.info("GitHubWidget has been closed.")
         super().closeEvent(event)
