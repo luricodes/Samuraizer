@@ -22,6 +22,10 @@ class AIWorker(QObject):
     finished = pyqtSignal(str)  # Emits analysis result
     error = pyqtSignal(str)     # Emits error message
     
+    # Constants for Anthropic API limits
+    ANTHROPIC_MAX_BYTES = 9000000  # Maximum bytes allowed by Anthropic
+    ANTHROPIC_CHUNK_SIZE = 8000000  # Slightly smaller chunk size for safety margin
+    
     def __init__(self, prompt: str, config: Dict[str, Any]):
         super().__init__()
         self.prompt = prompt
@@ -154,7 +158,24 @@ class AIWorker(QObject):
             
         except Exception as e:
             logger.error(f"Error in AI processing: {e}", exc_info=True)
-            self.error.emit(str(e))
+            # Transform error messages into user-friendly format
+            error_msg = self._get_user_friendly_error(e)
+            self.error.emit(error_msg)
+            
+    def _get_user_friendly_error(self, error: Exception) -> str:
+        """Convert technical error messages into user-friendly format."""
+        if isinstance(error, anthropic.BadRequestError):
+            if "too many total text bytes" in str(error):
+                return "The file is too large for analysis. The content will be automatically split into smaller chunks."
+            return "Invalid request to AI service. Please check your input and try again."
+        elif isinstance(error, RateLimitError):
+            return "API rate limit reached. Please wait a few minutes and try again."
+        elif isinstance(error, APITimeoutError):
+            return "The request timed out. Please try again."
+        elif isinstance(error, ValueError):
+            return str(error)  # ValueError messages are usually already user-friendly
+        else:
+            return f"An unexpected error occurred: {str(error)}"
             
     def _call_openai_api(self, model: str, api_key: str, max_tokens: int, temperature: float) -> str:
         """Make call to OpenAI API."""
@@ -190,42 +211,80 @@ class AIWorker(QObject):
             # Initialize Anthropic client
             client = anthropic.Anthropic(api_key=api_key)
             
-            # Prepare system message for code analysis
-            system_message = "You are an expert code analyzer. Analyze the provided code thoroughly and provide detailed insights."
-            
-            # Create message with proper structure
-            messages: List[MessageParam] = [
-                {
-                    "role": "user",
-                    "content": [
+            # Check input size and split if necessary
+            prompt_bytes = len(self.prompt.encode('utf-8'))
+            if prompt_bytes > self.ANTHROPIC_MAX_BYTES:
+                chunks = self._split_text_by_bytes(self.prompt, self.ANTHROPIC_CHUNK_SIZE)
+                self.progress.emit(f"Content split into {len(chunks)} parts for processing")
+                
+                full_response = []
+                for i, chunk in enumerate(chunks, 1):
+                    if self._stop_requested:
+                        break
+                        
+                    self.progress.emit(f"Processing part {i} of {len(chunks)}")
+                    
+                    # Process each chunk
+                    messages: List[MessageParam] = [
                         {
-                            "type": "text",
-                            "text": self.prompt
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"Part {i}/{len(chunks)}:\n\n{chunk}"
+                                }
+                            ]
                         }
                     ]
-                }
-            ]
-            
-            # Create message using the official client
-            message = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system_message,
-                messages=messages
-            )
-            
-            # Extract the response text
-            if message.content:
-                # Get all text content from response
-                response_text = []
-                for block in message.content:
-                    if isinstance(block, ContentBlock) and block.type == "text":
-                        response_text.append(block.text)
-                return "\n".join(response_text)
-            else:
-                raise ValueError("No content in response")
+                    
+                    message = client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        system="You are an expert code analyzer. Analyze the provided code thoroughly and provide detailed insights.",
+                        messages=messages
+                    )
+                    
+                    if message.content:
+                        response_text = []
+                        for block in message.content:
+                            if isinstance(block, ContentBlock) and block.type == "text":
+                                response_text.append(block.text)
+                        full_response.append("\n".join(response_text))
                 
+                return "\n\n=== Analysis Summary ===\n\n" + "\n\n=== Next Part ===\n\n".join(full_response)
+                
+            else:
+                # Single request for smaller content
+                messages: List[MessageParam] = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": self.prompt
+                            }
+                        ]
+                    }
+                ]
+                
+                message = client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    system="You are an expert code analyzer. Analyze the provided code thoroughly and provide detailed insights.",
+                    messages=messages
+                )
+                
+                if message.content:
+                    response_text = []
+                    for block in message.content:
+                        if isinstance(block, ContentBlock) and block.type == "text":
+                            response_text.append(block.text)
+                    return "\n".join(response_text)
+                else:
+                    raise ValueError("No content in response")
+                    
         except Exception as e:
             logger.error(f"Anthropic API call failed: {e}")
             raise
@@ -256,7 +315,7 @@ class AIWorker(QObject):
         return response.json()["response"]
         
     def _split_prompt(self, prompt: str, max_tokens: int) -> list[str]:
-        """Split a long prompt into smaller chunks."""
+        """Split a long prompt into smaller chunks based on token count."""
         chunks = []
         current_chunk = []
         current_length = 0
@@ -273,6 +332,29 @@ class AIWorker(QObject):
                 current_length += line_tokens
                 
         if current_chunk:
+            chunks.append('\n'.join(current_chunk))
+            
+        return chunks
+        
+    def _split_text_by_bytes(self, text: str, chunk_size: int) -> List[str]:
+        """Split text into chunks based on byte size while preserving line integrity."""
+        chunks = []
+        current_chunk = []
+        current_size = 0
+        
+        for line in text.split('\n'):
+            line_bytes = len((line + '\n').encode('utf-8'))
+            
+            if current_size + line_bytes > chunk_size:
+                if current_chunk:  # Save current chunk if it exists
+                    chunks.append('\n'.join(current_chunk))
+                current_chunk = [line]
+                current_size = line_bytes
+            else:
+                current_chunk.append(line)
+                current_size += line_bytes
+                
+        if current_chunk:  # Add the last chunk
             chunks.append('\n'.join(current_chunk))
             
         return chunks
