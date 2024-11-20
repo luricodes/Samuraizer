@@ -2,16 +2,18 @@ import logging
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QSplitter, QTabWidget, QMessageBox, QSplitterHandle
-from PyQt6.QtCore import Qt, QThread, QSettings
-from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QSplitter, QTabWidget, QMessageBox, QSplitterHandle
+)
+from PyQt6.QtCore import Qt, QThread, QSettings, QTimer
 from .components.progress_monitor import ProgressMonitor
 from .components.result_tabs import ResultTabs
 from .handlers.result_processor import ResultProcessor
 from ...dialogs.components.export import ExportDialog
 from ...workers.analysis.analyzer_worker import AnalyzerWorker
 from ....utils.log_handler import GuiLogHandler
-from ...windows.main.panels.details_panel import DetailsPanel
+# Removed the direct import of DetailsPanel to avoid circular import
+# from ...windows.main.panels.details_panel import DetailsPanel
 
 if TYPE_CHECKING:
     from ...windows.main.components.window import MainWindow
@@ -53,8 +55,9 @@ class CollapsibleSplitterHandle(QSplitterHandle):
         if abs(relative_pos - total_size) < self.snap_range:
             # Snap to collapsed state
             new_sizes = sizes.copy()
-            new_sizes[-1] = 0  # Collapse the bottom widget
-            splitter.setSizes(new_sizes)
+            if len(new_sizes) >= 1:
+                new_sizes[-1] = 0  # Collapse the last widget
+                splitter.setSizes(new_sizes)
         else:
             # Normal handle movement
             super().mouseMoveEvent(event)
@@ -96,20 +99,41 @@ class ResultsViewWidget(QWidget):
         self.results_tabs.currentChanged.connect(self._on_tab_changed)  # Add this connection
         self.main_splitter.addWidget(self.results_tabs)
 
-        # Replace the details_tabs with our new DetailsPanel
-        self.details_panel = DetailsPanel(self)
-        self.details_panel.analysis_completed.connect(self._on_analysis_completed)  # Add this connection
-        self.main_splitter.addWidget(self.details_panel)
+        # Initialize DetailsPanel within the method to avoid circular import
+        try:
+            from ...windows.main.panels.details_panel import DetailsPanel
+            self.details_panel = DetailsPanel(self)
+            self.details_panel.analysis_completed.connect(self._on_analysis_completed)  # Add this connection
+            self.main_splitter.addWidget(self.details_panel)
+        except ImportError as e:
+            logger.error(f"Failed to import DetailsPanel: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Import Error",
+                f"Failed to import DetailsPanel: {str(e)}"
+            )
 
         # Create and add log panel
-        from ...windows.main.panels import LogPanel
-        self.log_panel = LogPanel()
-        self.log_panel.setMinimumHeight(0)  # Allow complete collapse
-        self.main_splitter.addWidget(self.log_panel)
+        try:
+            from ...windows.main.panels import LogPanel
+            self.log_panel = LogPanel()
+            self.log_panel.setMinimumHeight(0)  # Allow complete collapse
+            self.main_splitter.addWidget(self.log_panel)
+        except ImportError as e:
+            logger.error(f"Failed to import LogPanel: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Import Error",
+                f"Failed to import LogPanel: {str(e)}"
+            )
 
         # Set initial sizes for better default appearance
         total_height = self.height()
-        self.main_splitter.setSizes([int(total_height * 0.4), int(total_height * 0.3), int(total_height * 0.3)])
+        self.main_splitter.setSizes([
+            int(total_height * 0.4),
+            int(total_height * 0.3),
+            int(total_height * 0.3)
+        ])
 
         # Restore splitter state if it exists
         splitter_state = self.settings.value("main_splitter/state")
@@ -251,7 +275,11 @@ class ResultsViewWidget(QWidget):
             if self.analyzer_worker:
                 self.analyzer_worker.stop()
                 # Show how many files were processed before stopping
-                status_msg = f"Analysis stopped. Processed {self.current_progress} of {self.total_files} files ({int((self.current_progress/self.total_files)*100)}% complete)"
+                status_msg = (
+                    f"Analysis stopped. Processed {self.current_progress} of "
+                    f"{self.total_files} files "
+                    f"({int((self.current_progress / self.total_files) * 100)}% complete)"
+                )
                 self.progress_monitor.updateStatus(status_msg)
                 self.progress_monitor.hideProgress()
         except Exception as e:
@@ -308,7 +336,7 @@ class ResultsViewWidget(QWidget):
                         thread.deleteLater()
                     except RuntimeError:
                         pass
-                        
+                
         except Exception as e:
             logger.error(f"Error during cleanup: {e}", exc_info=True)
 
@@ -363,7 +391,11 @@ class ResultsViewWidget(QWidget):
             
             # Check if analysis was stopped early
             if results.get("summary", {}).get("stopped_early", False):
-                status_msg = f"Analysis stopped. Processed {self.current_progress} of {self.total_files} files ({int((self.current_progress/self.total_files)*100)}% complete)"
+                status_msg = (
+                    f"Analysis stopped. Processed {self.current_progress} of "
+                    f"{self.total_files} files "
+                    f"({int((self.current_progress / self.total_files) * 100)}% complete)"
+                )
             else:
                 status_msg = "Analysis completed"
             self.progress_monitor.updateStatus(status_msg)

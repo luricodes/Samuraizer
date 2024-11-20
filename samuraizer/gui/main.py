@@ -5,6 +5,7 @@ import logging
 from .app.application import setup_application
 from .app.logger import setup_logging
 from .app.theme_manager import ThemeManager
+from .widgets.configuration.repository.github.utils.translations import TranslationManager
 from .windows import MainWindow
 
 def main() -> None:
@@ -16,6 +17,9 @@ def main() -> None:
         
         # Initialize the Qt Application
         app = setup_application()
+        
+        # Set up translations
+        translator = TranslationManager(app)
         
         # Set up the application style
         ThemeManager.setup_style(app)

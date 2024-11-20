@@ -4,17 +4,18 @@ from pathlib import Path
 import logging
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, 
-    QPushButton, QFileDialog, QGroupBox, QTabWidget
+    QPushButton, QFileDialog, QGroupBox, QTabWidget, QLabel
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from samuraizer.backend.services.logging.logging_service import setup_logging
 from .github.github_widget import GitHubWidget
+from .widgets.repository_list_widget import RepositoryListWidget
 
 logger = logging.getLogger(__name__)
 
 class RepositorySelectionWidget(QWidget):
-    """Widget for selecting the repository directory or GitHub repository."""
+    """Widget for selecting and managing multiple repository directories or GitHub repositories."""
     
     pathChanged = pyqtSignal(str)
     
@@ -26,32 +27,22 @@ class RepositorySelectionWidget(QWidget):
         """Initialize the user interface."""
         main_layout = QVBoxLayout(self)
         
+        # Create repository list widget
+        self.repo_list_widget = RepositoryListWidget()
+        self.repo_list_widget.repositorySelected.connect(self.on_repository_selected)
+        self.repo_list_widget.repositoryAdded.connect(self.on_repository_added)
+        self.repo_list_widget.repositoryRemoved.connect(self.on_repository_removed)
+        
+        # Create GitHub repository widget
+        self.github_widget = GitHubWidget()
+        self.github_widget.repository_cloned.connect(self.onGitHubRepoCloned)
+        self.github_widget.repositoryCloned = pyqtSignal(str)
+        
         # Create tab widget
         self.tab_widget = QTabWidget()
         
-        # Local repository tab
-        local_widget = QWidget()
-        local_layout = QHBoxLayout(local_widget)
-        
-        # Repository path input
-        self.repo_path = QLineEdit()
-        self.repo_path.setPlaceholderText("Select repository directory...")
-        self.repo_path.textChanged.connect(self.onPathChanged)
-        
-        # Browse button
-        browse_btn = QPushButton("Browse...")
-        browse_btn.clicked.connect(self.browseRepository)
-        browse_btn.setMaximumWidth(100)
-        
-        local_layout.addWidget(self.repo_path)
-        local_layout.addWidget(browse_btn)
-        
-        # GitHub repository tab
-        self.github_widget = GitHubWidget()
-        self.github_widget.repository_cloned.connect(self.onGitHubRepoCloned)
-        
         # Add tabs
-        self.tab_widget.addTab(local_widget, "Local Repository")
+        self.tab_widget.addTab(self.repo_list_widget, "Repository List")
         self.tab_widget.addTab(self.github_widget, "GitHub Repository")
         
         # Add tab widget to main layout
@@ -62,68 +53,48 @@ class RepositorySelectionWidget(QWidget):
         
         main_layout.addWidget(group)
     
-    def browseRepository(self):
-        """Open file dialog to select repository directory."""
-        dir_path = QFileDialog.getExistingDirectory(
-            self,
-            "Select Repository Directory",
-            str(Path.home()),
-            QFileDialog.Option.ShowDirsOnly
-        )
-        if dir_path:
-            self.repo_path.setText(dir_path)
+    def on_repository_selected(self, repo_path: str):
+        """Handle repository selection from the list."""
+        self.tab_widget.setCurrentWidget(self.repo_list_widget)
+        self.pathChanged.emit(repo_path)
+        logger.info(f"Selected repository: {repo_path}")
     
-    def onPathChanged(self, path):
-        """Handle repository path changes."""
-        # Basic validation of the path
-        if path:
-            path_obj = Path(path)
-            if not path_obj.exists():
-                self.repo_path.setStyleSheet("border: 2px solid #FF6B6B;")  # Red border
-                self.repo_path.setToolTip("Directory does not exist")
-            elif not path_obj.is_dir():
-                self.repo_path.setStyleSheet("border: 2px solid #FF6B6B;")  # Red border
-                self.repo_path.setToolTip("Selected path is not a directory")
-            elif not self._is_accessible(path_obj):
-                self.repo_path.setStyleSheet("border: 2px solid #FF6B6B;")  # Red border
-                self.repo_path.setToolTip("Directory is not accessible")
-            else:
-                self.repo_path.setStyleSheet("")  # Reset style
-                self.repo_path.setToolTip("")
-        else:
-            self.repo_path.setStyleSheet("")  # Reset style
-            self.repo_path.setToolTip("")
-        
-        self.pathChanged.emit(path)
+    def on_repository_added(self, repo_path: str):
+        """Handle addition of a new repository."""
+        self.pathChanged.emit(repo_path)
+        logger.info(f"Added repository: {repo_path}")
+    
+    def on_repository_removed(self, repo_path: str):
+        """Handle removal of a repository."""
+        logger.info(f"Removed repository: {repo_path}")
     
     def onGitHubRepoCloned(self, repo_path: str):
         """Handle when a GitHub repository is successfully cloned."""
-        self.tab_widget.setCurrentIndex(0)  # Switch to local repository tab
-        self.repo_path.setText(repo_path)
+        self.repo_list_widget.repositories.append(repo_path)
+        self.repo_list_widget.list_widget.addItem(repo_path)
+        self.pathChanged.emit(repo_path)
+        logger.info(f"Cloned GitHub repository: {repo_path}")
     
-    def _is_accessible(self, path: Path) -> bool:
-        """Check if the directory is accessible."""
-        try:
-            # Try to list directory contents
-            next(path.iterdir(), None)
-            return True
-        except (PermissionError, OSError):
-            return False
-    
-    def validate(self) -> tuple[bool, str]:
-        """Validate the selected repository path.
+    def validate(self) -> list[tuple[bool, str, str]]:
+        """Validate all selected repository paths.
         
         Returns:
-            tuple[bool, str]: A tuple containing (is_valid, error_message)
+            list of tuples: Each tuple contains (is_valid, error_message, repo_path)
         """
-        # If on GitHub tab, no validation needed as the clone operation handles it
-        if self.tab_widget.currentWidget() == self.github_widget:
-            return True, ""
-            
-        path = self.repo_path.text()
+        validations = []
+        for repo_path in self.repo_list_widget.repositories:
+            is_valid, error = self._validate_path(repo_path)
+            validations.append((is_valid, error, repo_path))
+        return validations
+    
+    def _validate_path(self, path: str) -> tuple[bool, str]:
+        """Validate a single repository path.
         
+        Returns:
+            tuple: (is_valid, error_message)
+        """
         if not path:
-            return False, "Repository path is required"
+            return False, "Repository path is required."
         
         path_obj = Path(path)
         
@@ -137,7 +108,16 @@ class RepositorySelectionWidget(QWidget):
             return False, f"Directory is not accessible: {path}"
         
         return True, ""
-        
+    
+    def _is_accessible(self, path: Path) -> bool:
+        """Check if the directory is accessible."""
+        try:
+            # Try to list directory contents
+            next(path.iterdir(), None)
+            return True
+        except (PermissionError, OSError):
+            return False
+    
     def closeEvent(self, event):
         """Handle widget closure."""
         self.github_widget.cleanup()

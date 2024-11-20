@@ -18,6 +18,7 @@ from .workers.git_clone_worker import GitCloneWorker
 from .widgets.status_widget import StatusWidget
 from .exceptions.github_errors import CloneOperationError
 from .utils.github_utils import is_valid_github_url, fetch_repo_info, get_repo_branches
+from .utils.github_auth import GitHubAuthManager, TokenInputWidget
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class GitHubWidget(QWidget):
         self.clone_worker = None
         self.temp_dir = None
         self.repo_info = None
+        self.auth_manager = GitHubAuthManager()
         self._setup_ui()
 
     def _setup_ui(self):
@@ -66,6 +68,10 @@ class GitHubWidget(QWidget):
         self.clone_btn.clicked.connect(self.clone_repository)
         self.clone_btn.setEnabled(False)
         
+        # Authenticate button
+        self.auth_btn = QPushButton("Authenticate with GitHub")
+        self.auth_btn.clicked.connect(self.open_authentication)
+        
         # Status widget
         self.status_widget = StatusWidget()
         
@@ -73,11 +79,19 @@ class GitHubWidget(QWidget):
         layout.addLayout(url_layout)
         layout.addLayout(branch_layout)
         layout.addWidget(self.clone_btn)
+        layout.addWidget(self.auth_btn)
         layout.addWidget(self.status_widget)
         
         group.setLayout(layout)
         main_layout.addWidget(group)
         main_layout.addStretch()
+
+    def open_authentication(self):
+        """Open the TokenInputWidget for user authentication."""
+        self.token_input_widget = TokenInputWidget(self.auth_manager)
+        self.token_input_widget.setWindowTitle("GitHub Authentication")
+        self.token_input_widget.setFixedSize(400, 150)
+        self.token_input_widget.show()
 
     def _validate_url(self, url: str) -> None:
         """Validate the GitHub repository URL and fetch repository information."""
@@ -92,10 +106,10 @@ class GitHubWidget(QWidget):
         
         if is_valid:
             self.url_input.setStyleSheet("")
-            self.status_widget.update_status("Fetching repository information...")
+            self.status_widget.update_status("Fetching repository information...", show_progress=True)
             
             # Fetch repository information
-            self.repo_info = fetch_repo_info(url)
+            self.repo_info = fetch_repo_info(url, self.auth_manager.get_access_token())
             if self.repo_info:
                 # Update status with repository information
                 info_text = (
@@ -105,10 +119,10 @@ class GitHubWidget(QWidget):
                 )
                 if self.repo_info['description']:
                     info_text += f"\nDescription: {self.repo_info['description']}"
-                self.status_widget.update_status(info_text)
+                self.status_widget.update_status(info_text, show_progress=False)
                 
                 # Fetch and populate branches
-                branches = get_repo_branches(url)
+                branches = get_repo_branches(url, self.auth_manager.get_access_token())
                 if branches:
                     self.branch_combo.clear()
                     self.branch_combo.addItem("default")
@@ -121,12 +135,12 @@ class GitHubWidget(QWidget):
                 self.clone_btn.setEnabled(True)
                 self.branch_combo.setEnabled(True)
             else:
-                self.status_widget.update_status("Repository not found or inaccessible")
+                self.status_widget.update_status("Repository not found or inaccessible", show_progress=False)
                 self.clone_btn.setEnabled(False)
                 self.branch_combo.setEnabled(False)
         else:
             self.url_input.setStyleSheet("border: 1px solid red;")
-            self.status_widget.update_status("Invalid GitHub repository URL")
+            self.status_widget.update_status("Invalid GitHub repository URL", show_progress=False)
             self.clone_btn.setEnabled(False)
             self.branch_combo.setEnabled(False)
 
@@ -145,6 +159,7 @@ class GitHubWidget(QWidget):
         self.clone_btn.setEnabled(False)
         self.url_input.setEnabled(False)
         self.branch_combo.setEnabled(False)
+        self.auth_btn.setEnabled(False)
 
         # Create temporary directory for cloning
         try:
@@ -157,8 +172,10 @@ class GitHubWidget(QWidget):
 
         # Start clone operation
         branch = self.branch_combo.currentText() if self.branch_combo.currentText() != "default" else None
-        self.clone_worker = GitCloneWorker(url, str(self.temp_dir), branch)
+        access_token = self.auth_manager.get_access_token()
+        self.clone_worker = GitCloneWorker(url, str(self.temp_dir), branch, access_token=access_token)
         self.clone_worker.progress.connect(self.status_widget.update_status)
+        self.clone_worker.progress_percentage.connect(self.status_widget.update_progress)
         self.clone_worker.error.connect(self._handle_clone_error)
         self.clone_worker.finished.connect(self._handle_clone_success)
         self.clone_worker.start()
@@ -182,6 +199,8 @@ class GitHubWidget(QWidget):
         self.clone_btn.setEnabled(True)
         self.url_input.setEnabled(True)
         self.branch_combo.setEnabled(True)
+        self.auth_btn.setEnabled(True)
+        self.status_widget.clear()
 
     def cleanup(self):
         """Clean up temporary resources."""
