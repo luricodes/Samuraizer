@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, QSettings, pyqtSignal, QThread, QTimer, QSize
 from PyQt6.QtGui import QFont, QAction, QTextCursor, QPalette
 import json
 import random
+import tiktoken  # Added for accurate token counting
 
 from ....workers.analysis.ai_worker import AIWorker
 from samuraizer.config.llm_config import LLMConfigManager
@@ -284,6 +285,11 @@ class DetailsPanel(QWidget):
         self.current_selection = selection_data
         self.analyze_button.setEnabled(True)
         
+    def _count_tokens(self, text: str) -> int:
+        """Accurately count tokens using tiktoken."""
+        encoding = tiktoken.get_encoding("cl100k_base")
+        return len(encoding.encode(text))
+        
     def start_analysis(self):
         """Start the analysis process with the selected type."""
         if not self.current_selection:
@@ -295,6 +301,7 @@ class DetailsPanel(QWidget):
             api_key = config['api_key']
             provider = config['provider']
             model = config['model'] if provider != 'Custom' else config.get('custom_model', '')
+            max_tokens = config['max_tokens']
             
             # Validate LLM settings
             if not api_key:
@@ -325,6 +332,18 @@ class DetailsPanel(QWidget):
             analysis_type = self.analysis_type.currentText()
             prompt = self._create_analysis_prompt(analysis_type)
             
+            # Pre-validate prompt length
+            token_count = self._count_tokens(prompt)
+            if token_count > max_tokens:
+                response = QMessageBox.question(
+                    self,
+                    "Input Too Large",
+                    f"Your input prompt is {token_count} tokens, which exceeds the maximum allowed ({max_tokens} tokens).\n\nDo you want to proceed with automatic splitting?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if response == QMessageBox.StandardButton.No:
+                    return  # Abort analysis
+                
             # Create new analysis tab
             tab = AnalysisTab()
             tab_index = self.tab_widget.addTab(
@@ -351,7 +370,7 @@ class DetailsPanel(QWidget):
                 'api_key': api_key,
                 'model': model,
                 'temperature': config['temperature'],
-                'max_tokens': config['max_tokens'],
+                'max_tokens': max_tokens,
                 'api_base': config['api_base']
             })
             
