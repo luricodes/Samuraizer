@@ -90,17 +90,23 @@ class RepositorySelectionWidget(QWidget):
         self.pathChanged.emit(repo_path)
         logger.info(f"Cloned GitHub repository: {repo_path}")
     
-    def validate(self) -> list[tuple[bool, str, str]]:
+    def validate(self) -> tuple[bool, str]:
         """Validate all selected repository paths.
         
         Returns:
-            list of tuples: Each tuple contains (is_valid, error_message, repo_path)
+            tuple: (is_valid, error_message)
         """
         validations = []
         for repo_path in self.repo_list_widget.repositories:
             is_valid, error = self._validate_path(repo_path)
-            validations.append((is_valid, error, repo_path))
-        return validations
+            if not is_valid:
+                validations.append(error)
+        
+        if not validations:
+            return True, ""
+        else:
+            combined_error_msg = "\n".join(validations)
+            return False, combined_error_msg
     
     def _validate_path(self, path: str) -> tuple[bool, str]:
         """Validate a single repository path.
