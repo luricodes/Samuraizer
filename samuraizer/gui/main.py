@@ -4,7 +4,7 @@ import logging
 from .app.application import setup_application
 from .app.logger import setup_logging
 from .app.theme_manager import ThemeManager
-from .utils.translations import TranslationManager
+from ..utils.translations import TranslationManager
 from .windows import MainWindow
 
 def main() -> None:
