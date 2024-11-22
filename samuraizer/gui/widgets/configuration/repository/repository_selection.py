@@ -36,8 +36,7 @@ class RepositorySelectionWidget(QWidget):
         # Create GitHub repository widget
         self.github_widget = GitHubWidget()
         self.github_widget.repository_cloned.connect(self.onGitHubRepoCloned)
-        # Removed the incorrect signal definition below
-        # self.github_widget.repositoryCloned = pyqtSignal(str)
+        
         
         # Create repository path line edit
         self.repo_path = QLineEdit()
