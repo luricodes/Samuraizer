@@ -5,7 +5,7 @@ import logging
 from PyQt6.QtWidgets import QWidget, QTabWidget, QVBoxLayout
 from PyQt6.QtCore import QSize
 
-from ...base_dialog import BaseDialog
+from ..base_dialog import BaseDialog
 from .groups import (
     GeneralSettingsGroup,
     ThemeSettingsGroup,
@@ -15,7 +15,7 @@ from .groups.timezone_settings import TimezoneSettingsGroup
 from .groups.llm_settings import LLMSettingsGroup
 
 if TYPE_CHECKING:
-    from ....windows import MainWindow
+    from ...windows import MainWindow
 
 logger = logging.getLogger(__name__)
 

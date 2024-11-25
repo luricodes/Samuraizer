@@ -5,7 +5,7 @@ from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QLabel, QWidget
 
-from ...base_dialog import BaseDialog
+from ..base_dialog import BaseDialog
 from .groups import (
     FormatSelectionGroup,
     OutputFileGroup,
@@ -13,7 +13,7 @@ from .groups import (
 )
 
 if TYPE_CHECKING:
-    from ....windows.main.window import MainWindow
+    from ...windows.main.components.window import MainWindow
 
 logger = logging.getLogger(__name__)
 

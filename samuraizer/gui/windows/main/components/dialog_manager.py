@@ -4,11 +4,11 @@ from PyQt6.QtWidgets import QMessageBox
 
 if TYPE_CHECKING:
     from ...base.window import BaseWindow
-    from samuraizer.gui.dialogs.components.settings import SettingsDialog
-    from samuraizer.gui.dialogs.components.about import AboutDialog
+    from samuraizer.gui.dialogs.settings import SettingsDialog
+    from samuraizer.gui.dialogs.about import AboutDialog
 else:
     from ...base.window import BaseWindow
-    from samuraizer.gui.dialogs.components import settings, about
+    from samuraizer.gui.dialogs import settings, about
     SettingsDialog = settings.SettingsDialog
     AboutDialog = about.AboutDialog
 

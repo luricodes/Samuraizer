@@ -1,7 +1,7 @@
 # samuraizer/gui/dialogs/__init__.py
-from .components.export import ExportDialog
-from .components.settings import SettingsDialog
-from .components.about import AboutDialog
+from .export import ExportDialog
 from .base_dialog import BaseDialog
+from .about import AboutDialog
+from .settings import SettingsDialog
 
 __all__ = ['BaseDialog', 'ExportDialog', 'SettingsDialog', 'AboutDialog']

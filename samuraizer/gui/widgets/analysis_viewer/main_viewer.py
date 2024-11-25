@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt, QThread, QSettings, QTimer
 from .components.progress_monitor import ProgressMonitor
 from .components.result_tabs import ResultTabs
 from .handlers.result_processor import ResultProcessor
-from ...dialogs.components.export import ExportDialog
+from ...dialogs.export import ExportDialog
 from ...workers.analysis.analyzer_worker import AnalyzerWorker
 from ....utils.log_handler import GuiLogHandler
 # Removed the direct import of DetailsPanel to avoid circular import

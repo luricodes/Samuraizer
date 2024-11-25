@@ -5,13 +5,13 @@ import logging
 from PyQt6.QtWidgets import QWidget, QLabel, QDialogButtonBox
 from PyQt6.QtCore import Qt, QSize
 
-from ...base_dialog import BaseDialog
+from ..base_dialog import BaseDialog
 from .title_section import TitleSection
 from .description_section import DescriptionSection
 from .author_section import AuthorSection
 
 if TYPE_CHECKING:
-    from .....gui.windows.main.components.window import MainWindow
+    from ....gui.windows.main.components.window import MainWindow
 
 logger = logging.getLogger(__name__)
 
