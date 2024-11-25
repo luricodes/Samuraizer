@@ -1,8 +1,8 @@
 # samuraizer/gui/widgets/configuration/analysis_options.py
 
 import logging
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
-from PyQt6.QtCore import QSettings
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
+from PyQt6.QtCore import QSettings, Qt
 
 from pathlib import Path
 
@@ -23,7 +23,18 @@ class AnalysisOptionsWidget(QWidget):
 
     def initUI(self):
         """Initialize the user interface."""
-        layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to maximize space
+
+        # Create a scroll area
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)  # Allow the widget to resize
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        # Create a container widget for the scroll area
+        container = QWidget()
+        layout = QVBoxLayout(container)
         layout.setSpacing(10)
 
         # Repository Selection
@@ -42,7 +53,11 @@ class AnalysisOptionsWidget(QWidget):
         # Add stretch at the end to keep everything aligned at the top
         layout.addStretch()
 
-        self.setLayout(layout)
+        # Set the container as the scroll area's widget
+        scroll_area.setWidget(container)
+        
+        # Add the scroll area to the main layout
+        main_layout.addWidget(scroll_area)
 
     def onPathChanged(self, path):
         """Handle repository path changes."""
