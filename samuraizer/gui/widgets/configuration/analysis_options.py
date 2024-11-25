@@ -6,7 +6,7 @@ from PyQt6.QtCore import QSettings
 
 from pathlib import Path
 
-from .repository.repository_selection import RepositorySelectionWidget
+from ..github_integration.repository_selection import RepositorySelectionWidget
 from .analysis_settings.analysis_configuration import AnalysisConfigurationWidget
 from .analysis_settings.threading_options import ThreadingOptionsWidget
 

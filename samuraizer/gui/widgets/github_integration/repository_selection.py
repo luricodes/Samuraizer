@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from samuraizer.backend.services.logging.logging_service import setup_logging
-from .github.github_widget import GitHubWidget
-from .widgets.repository_list_widget import RepositoryListWidget
+from .github_widget import GitHubWidget
+from .repository_list_widget import RepositoryListWidget
 
 logger = logging.getLogger(__name__)
 
