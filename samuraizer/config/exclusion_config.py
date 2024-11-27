@@ -29,12 +29,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "tmp", "node_modules", ".git", "dist", "build", "out", "target",
             "public", "temp", "coverage", "test-results", "reports", ".vscode",
             ".idea", "logs", "assets", "bower_components", ".next", "venv",
-            "tests", "samuraizer.egg-info", "__pycache__", ".mypy_cache",
-            ".cache", "Samuraizer.egg-info", "lib"
+            "tests", "__pycache__", ".mypy_cache",
+            ".cache", "lib"
         ],
         "files": [
             "config.json", "secret.txt", "package-lock.json", "favicon.ico",
-            "GeistMonoVF.woff", "GeistVF.woff", ".repo_structure_cache",
+            ".repo_structure_cache",
             ".repo_structure_cache.db", ".gitignore"
         ],
         "patterns": [

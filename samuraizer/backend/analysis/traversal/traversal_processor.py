@@ -3,6 +3,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from tqdm import tqdm
 from pathlib import Path
 import logging
+import sys
+import io
 
 from .traversal_core import traverse_and_collect
 from ..file_processor import process_file
@@ -39,11 +41,15 @@ def get_directory_structure(
     logging.debug(f"Excluded files: {excluded_files_count} ({excluded_percentage:.2f}%)")
     logging.debug(f"Processed files: {included_files}")
     
+    # Create a fallback file object if sys.stdout is None or not available
+    file_out = sys.stdout if hasattr(sys, 'stdout') and sys.stdout is not None else io.StringIO()
+    
     pbar: tqdm = tqdm(
         total=included_files,
         desc="Process files",
         unit="file",
-        dynamic_ncols=True
+        dynamic_ncols=True,
+        file=file_out
     )
 
     failed_files: List[Dict[str, str]] = []
