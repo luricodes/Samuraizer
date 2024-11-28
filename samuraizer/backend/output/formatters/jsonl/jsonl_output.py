@@ -6,7 +6,7 @@ import os
 from samuraizer.utils.time_utils import format_timestamp
 from colorama import Fore, Style
 
-def output_to_ndjson(
+def output_to_jsonl(
     data_generator: Generator[Dict[str, Any], None, None],
     output_file: str,
     config: Dict[str, Any] = None

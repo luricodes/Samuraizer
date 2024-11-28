@@ -189,7 +189,7 @@ class OutputOptionsWidget(QWidget):
             "JSON": "Standard JSON format with optional pretty printing",
             "YAML": "Human-readable YAML format",
             "XML": "XML format with optional pretty printing",
-            "JSONL": "Newline-delimited JSON (good for streaming)",
+            "JSONL": "JSON Lines Format encoded in UTF-8 (used for LLM finetuning)",
             "DOT": "GraphViz DOT format for visualization",
             "CSV": "Comma-separated values format",
             "S-Expression": "Lisp-style S-Expression format",
