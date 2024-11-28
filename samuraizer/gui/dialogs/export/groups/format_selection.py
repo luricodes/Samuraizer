@@ -18,7 +18,7 @@ class FormatSelectionGroup(BaseExportGroup):
         'XML': ('.xml', 'Extensible Markup Language - Structured format'),
         'CSV': ('.csv', 'Comma-Separated Values - Tabular format'),
         'DOT': ('.dot', 'GraphViz DOT - Graph visualization format'),
-        'NDJSON': ('.ndjson', 'Newline-Delimited JSON - Streaming-friendly format'),
+        'JSONL': ('.jsonl', 'Newline-Delimited JSON - Streaming-friendly format'),
         'S-Expression': ('.sexp', 'S-Expression format - Lisp-style format'),
         'MessagePack': ('.msgpack', 'MessagePack binary format - Compact binary format')
     }

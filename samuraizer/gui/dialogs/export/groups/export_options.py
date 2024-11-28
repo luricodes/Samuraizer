@@ -38,7 +38,7 @@ class ExportOptionsGroup(BaseExportGroup):
             # Streaming option
             self.enable_streaming = QCheckBox("Enable streaming mode")
             self.enable_streaming.setToolTip(
-                "Use streaming for large datasets (JSON/NDJSON/MessagePack only)"
+                "Use streaming for large datasets (JSON/JSONL/MessagePack only)"
             )
             self.enable_streaming.stateChanged.connect(self.on_streaming_changed)
             layout.addRow("", self.enable_streaming)
@@ -61,11 +61,11 @@ class ExportOptionsGroup(BaseExportGroup):
         try:
             if state == Qt.CheckState.Checked.value:
                 format_name = self.parent().format_group.format_combo.currentText()
-                if format_name.upper() not in ["JSON", "NDJSON", "MESSAGEPACK"]:
+                if format_name.upper() not in ["JSON", "JSONL", "MESSAGEPACK"]:
                     if hasattr(self.parent(), 'show_error'):
                         self.parent().show_error(
                             "Invalid Configuration",
-                            "Streaming is only available for JSON, NDJSON, "
+                            "Streaming is only available for JSON, JSONL, "
                             "and MessagePack formats."
                         )
                     self.enable_streaming.setChecked(False)
@@ -79,7 +79,7 @@ class ExportOptionsGroup(BaseExportGroup):
         """Update options state based on selected format."""
         try:
             # Update streaming availability
-            format_supports_streaming = format_name.upper() in ["JSON", "NDJSON", "MESSAGEPACK"]
+            format_supports_streaming = format_name.upper() in ["JSON", "JSONL", "MESSAGEPACK"]
             self.enable_streaming.setEnabled(format_supports_streaming)
             if not format_supports_streaming:
                 self.enable_streaming.setChecked(False)

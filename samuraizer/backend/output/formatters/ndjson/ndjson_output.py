@@ -68,8 +68,8 @@ def output_to_ndjson(
                         logging.error(
                             f"Error serializing JSON data for '{file_path}': {json_err}"
                         )
-            logging.info(f"NDJSON output successfully written to '{output_file}'.")
+            logging.info(f"JSONL output successfully written to '{output_file}'.")
     except IOError as io_err:
-        logging.error(f"IO error while writing the NDJSON output file: {io_err}")
+        logging.error(f"IO error while writing the JSONL output file: {io_err}")
     except Exception as e:
-        logging.error(f"Unexpected error while writing the NDJSON output file: {e}")
+        logging.error(f"Unexpected error while writing the JSONL output file: {e}")

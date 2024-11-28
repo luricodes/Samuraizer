@@ -204,8 +204,8 @@ def run() -> None:
     try:
         if stream_mode:
             # Use Streaming-Mode
-            if output_format in ["json", "ndjson", "msgpack"]:
-                # USE JSON-Streaming or NDJSON-Output or MsgPack-Output
+            if output_format in ["json", "jsonl", "msgpack"]:
+                # USE JSON-Streaming or JSONL-Output or MsgPack-Output
                 data_gen = get_directory_structure_stream(
                     root_dir=root_directory,
                     max_file_size=max_file_size,
@@ -222,7 +222,7 @@ def run() -> None:
                 output_function = OutputFactory.get_output(output_format, streaming=stream_mode)
                 output_function(data_gen, output_file)
             else:
-                logging.error("--stream is only available for the JSON, NDJSON & MsgPack formats.")
+                logging.error("--stream is only available for the JSON, JSONL & MsgPack formats.")
                 sys.exit(1)
         else:
             # Standardmode

@@ -55,7 +55,7 @@ class OutputOptionsWidget(QWidget):
         # Create format combo box with "Choose Output Format" as default
         self.format_combo = QComboBox()
         formats = [
-            "Choose Output Format", "JSON", "YAML", "XML", "NDJSON", "DOT",
+            "Choose Output Format", "JSON", "YAML", "XML", "JSONL", "DOT",
             "CSV", "S-Expression", "MessagePack"
         ]
         self.format_combo.addItems(formats)
@@ -107,7 +107,7 @@ class OutputOptionsWidget(QWidget):
         # Streaming description
         streaming_desc = QLabel(
             "Streaming mode writes results incrementally, using less memory "
-            "but only available for JSON, NDJSON, and MessagePack formats."
+            "but only available for JSON, JSONL, and MessagePack formats."
         )
         streaming_desc.setWordWrap(True)
         streaming_desc.setStyleSheet("color: gray;")
@@ -172,7 +172,7 @@ class OutputOptionsWidget(QWidget):
             "json": ".json",
             "yaml": ".yaml",
             "xml": ".xml",
-            "ndjson": ".ndjson",
+            "jsonl": ".jsonl",
             "dot": ".dot",
             "csv": ".csv",
             "s-expression": ".sexp",
@@ -189,7 +189,7 @@ class OutputOptionsWidget(QWidget):
             "JSON": "Standard JSON format with optional pretty printing",
             "YAML": "Human-readable YAML format",
             "XML": "XML format with optional pretty printing",
-            "NDJSON": "Newline-delimited JSON (good for streaming)",
+            "JSONL": "Newline-delimited JSON (good for streaming)",
             "DOT": "GraphViz DOT format for visualization",
             "CSV": "Comma-separated values format",
             "S-Expression": "Lisp-style S-Expression format",
@@ -198,7 +198,7 @@ class OutputOptionsWidget(QWidget):
         self.format_description.setText(descriptions.get(format_name, ""))
 
         # Update streaming availability
-        format_supports_streaming = format_name.upper() in ["JSON", "NDJSON", "MESSAGEPACK"]
+        format_supports_streaming = format_name.upper() in ["JSON", "JSONL", "MESSAGEPACK"]
         self.enable_streaming.setEnabled(format_supports_streaming)
         if not format_supports_streaming:
             self.enable_streaming.setChecked(False)
@@ -233,7 +233,7 @@ class OutputOptionsWidget(QWidget):
                 QMessageBox.warning(
                     self,
                     "Invalid Configuration",
-                    "Streaming is only available for JSON, NDJSON, and MessagePack formats."
+                    "Streaming is only available for JSON, JSONL, and MessagePack formats."
                 )
                 self.enable_streaming.setChecked(False)
                 return
@@ -346,4 +346,4 @@ class OutputOptionsWidget(QWidget):
     def isStreamingSupported(self) -> bool:
         """Check if the selected format supports streaming"""
         format_name = self.format_combo.currentText().upper()
-        return format_name in ["JSON", "NDJSON", "MESSAGEPACK"]
+        return format_name in ["JSON", "JSONL", "MESSAGEPACK"]

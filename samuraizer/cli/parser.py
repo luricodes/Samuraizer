@@ -18,14 +18,14 @@ def get_default_cache_path() -> str:
 def parse_arguments():
     parser = argparse.ArgumentParser(
         description=(
-            "Lists a repository into a JSON, YAML, XML, NDJSON, DOT, "
+            "Lists a repository into a JSON, YAML, XML, JSONL, DOT, "
             "S-Expressions, MessagePack or CSV file."
         ),
         epilog=(
             "Examples:\\n"
             "  samuraizer /path/to/repo -o output.json\\n"
             "  samuraizer --exclude-folders build dist --include-binary --format yaml\\n"
-            "  samuraizer /path/to/repo -o output.ndjson --format ndjson\\n"
+            "  samuraizer /path/to/repo -o output.jsonl --format jsonl\\n"
             "  samuraizer /path/to/repo -o output.dot --format dot\\n"
             "  samuraizer /path/to/repo -o output.csv --format csv\\n"
             "  samuraizer /path/to/repo -o output.sexp --format sexp\\n"
@@ -68,7 +68,7 @@ def parse_arguments():
     parser.add_argument(
         "-f",
         "--format",
-        choices=["json", "yaml", "xml", "ndjson", "dot", "csv", "sexp", "msgpack"],
+        choices=["json", "yaml", "xml", "jsonl", "dot", "csv", "sexp", "msgpack"],
         default="json",
         help="Output file format (default: json).",
     )
@@ -76,7 +76,7 @@ def parse_arguments():
     parser.add_argument(
         "--stream",
         action="store_true",
-        help="Enables streaming mode for JSON output (automatically enabled for NDJSON and MessagePack).",
+        help="Enables streaming mode for JSON output (automatically enabled for JSONL and MessagePack).",
     )
 
     parser.add_argument(
@@ -200,7 +200,7 @@ def parse_arguments():
         "json": ".json",
         "yaml": ".yaml",
         "xml": ".xml",
-        "ndjson": ".ndjson",
+        "jsonl": ".jsonl",
         "dot": ".dot",
         "csv": ".csv",
         "sexp": ".sexp",
@@ -214,17 +214,17 @@ def parse_arguments():
         args.output = str(output_path.with_suffix(expected_extension))
         logger.info(f"Adjusted output filename to use correct extension: {args.output}")
 
-    # Automatically enable streaming for NDJSON and MessagePack
-    if args.format in ["ndjson", "msgpack"]:
+    # Automatically enable streaming for JSONL and MessagePack
+    if args.format in ["jsonl", "msgpack"]:
         args.stream = True
-        if args.format == "ndjson":
-            logger.debug("Streaming automatically enabled for NDJSON format")
+        if args.format == "jsonl":
+            logger.debug("Streaming automatically enabled for JSONL format")
         else:
             logger.debug("Streaming automatically enabled for MessagePack format")
 
     # Validate streaming mode is only used with supported formats
-    if args.stream and args.format not in ["json", "ndjson", "msgpack"]:
-        parser.error("--stream is only available for JSON, NDJSON, and MessagePack formats.")
+    if args.stream and args.format not in ["json", "jsonl", "msgpack"]:
+        parser.error("--stream is only available for JSON, JSONL, and MessagePack formats.")
 
     # Handle timezone settings
     if args.use_utc and args.repository_timezone:

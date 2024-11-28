@@ -5,7 +5,7 @@ from typing import Callable, Dict, Any
 from ..formatters.json.json_output import output_to_json, output_to_json_stream
 from ..formatters.yaml.yaml_output import output_to_yaml
 from ..formatters.xml.xml_output import output_to_xml
-from ..formatters.ndjson.ndjson_output import output_to_ndjson
+from ..formatters.jsonl.ndjson_output import output_to_ndjson
 from ..formatters.dot.dot_output import output_to_dot
 from ..formatters.csv.csv_output import output_to_csv
 from ..formatters.sexp.s_expression_output import output_to_sexp
@@ -26,7 +26,7 @@ class OutputFactory:
         "json_stream": output_to_json_stream,
         "yaml": output_to_yaml,
         "xml": output_to_xml,
-        "ndjson": output_to_ndjson,
+        "jsonl": output_to_ndjson,
         "dot": output_to_dot,
         "csv": output_to_csv,
         "sexp": output_to_sexp,

@@ -137,7 +137,7 @@ class AnalyzerWorker(QObject):
             results = None
             try:
                 output_format = self._map_format_name(output_config.get('format', 'json'))
-                is_streaming_format = output_format in ['ndjson']
+                is_streaming_format = output_format in ['jsonl']
                 
                 if output_config.get('streaming', False) or is_streaming_format:
                     # Get both the generator for output and collected results for GUI
@@ -358,8 +358,8 @@ class AnalyzerWorker(QObject):
                 'use_compression': output_config.get('use_compression', False)
             }
             
-            # For NDJSON format, ensure we're using streaming mode
-            if output_format == 'ndjson' and not isinstance(results, Generator):
+            # For JSONL format, ensure we're using streaming mode
+            if output_format == 'jsonl' and not isinstance(results, Generator):
                 # Convert dictionary results to a generator format
                 def dict_to_generator(data: Dict[str, Any]):
                     structure = data.get('structure', {})
@@ -391,7 +391,7 @@ class AnalyzerWorker(QObject):
             # Get output function with configuration
             output_func = OutputFactory.get_output(
                 output_format,
-                streaming=isinstance(results, Generator) or output_format == 'ndjson',
+                streaming=isinstance(results, Generator) or output_format == 'jsonl',
                 config=formatter_config
             )
             
