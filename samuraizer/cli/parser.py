@@ -1,5 +1,3 @@
-# samuraizer/cli/parser.py
-
 import argparse
 import os
 from pathlib import Path
@@ -193,6 +191,19 @@ def parse_arguments():
         help="Disable file caching (slower but uses less disk space)"
     )
     
+    # Add new optional settings for JSONL
+    parser.add_argument(
+        "--llm-finetuning",
+        action="store_true",
+        help="Format JSONL output for LLM fine-tuning."
+    )
+    
+    parser.add_argument(
+        "--include-metadata",
+        action="store_true",
+        help="Include metadata fields in JSONL output."
+    )
+
     args = parser.parse_args()
 
     # Validate and fix output extension
@@ -229,5 +240,9 @@ def parse_arguments():
     # Handle timezone settings
     if args.use_utc and args.repository_timezone:
         parser.error("Cannot use both --use-utc and --repository-timezone")
+
+    # Validate that --llm-finetuning and --include-metadata are only used with JSONL format
+    if (args.llm_finetuning or args.include_metadata) and args.format != "jsonl":
+        parser.error("--llm-finetuning and --include-metadata can only be used with --format jsonl")
 
     return args
