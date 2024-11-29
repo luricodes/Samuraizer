@@ -108,19 +108,6 @@ class OutputOptionsWidget(QWidget):
         is_jsonl = format_upper == "JSONL"
         self.jsonl_options_group.set_visible(is_jsonl)
 
-        # Reset and update LLM options when switching to JSONL
-        if is_jsonl:
-            self.jsonl_options_group.llm_finetuning.setChecked(True)
-            self.jsonl_options_group.on_llm_option_changed(Qt.CheckState.Checked)
-        else:
-            self.jsonl_options_group.llm_finetuning.setChecked(False)
-            self.jsonl_options_group.set_options({
-                'include_metadata': False,
-                'code_structure': False,
-                'skip_preprocessing': False,
-                'context_depth': 2
-            })
-
         # Update file extension in output path if a format is selected
         if self.output_file_group.get_output_path() and format_name != "Choose Output Format":
             current_path = Path(self.output_file_group.get_output_path())
@@ -232,23 +219,9 @@ class OutputOptionsWidget(QWidget):
                 self.settings_manager.save_setting("output/streaming", self.streaming_options_group.enable_streaming.isChecked())
                 self.additional_options_group.save_settings(self.settings_manager)
                 self.jsonl_options_group.save_settings(self.settings_manager)
-                self.output_file_group.save_settings(self.settings_manager)  # Pass settings_manager here
+                self.output_file_group.save_settings(self.settings_manager)
         except Exception as e:
             logger.error(f"Error saving output settings: {e}", exc_info=True)
-
-    def get_file_extension(self, format_name: str) -> str:
-        """Get the appropriate file extension for the selected format"""
-        extensions = {
-            "json": ".json",
-            "yaml": ".yaml",
-            "xml": ".xml",
-            "jsonl": ".jsonl",
-            "dot": ".dot",
-            "csv": ".csv",
-            "s-expression": ".sexp",
-            "messagepack": ".msgpack"
-        }
-        return extensions.get(format_name.lower(), ".txt")
 
     def is_streaming_supported(self) -> bool:
         """Check if the selected format supports streaming"""

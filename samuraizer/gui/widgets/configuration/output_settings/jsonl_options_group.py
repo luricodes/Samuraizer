@@ -14,13 +14,14 @@ class JsonlOptionsGroup(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("JSONL Options", parent)
         self.initUI()
+        self._cached_options = None
 
     def initUI(self):
         layout = QFormLayout()
 
         self.llm_finetuning = QCheckBox("Format for LLM fine-tuning")
         self.llm_finetuning.setChecked(True)
-        self.llm_finetuning.stateChanged.connect(self.on_llm_option_changed)
+        self.llm_finetuning.stateChanged.connect(self._on_llm_option_changed)
         layout.addRow("", self.llm_finetuning)
 
         # LLM Options Subgroup
@@ -71,32 +72,49 @@ class JsonlOptionsGroup(QGroupBox):
 
         self.setLayout(layout)
         self.setVisible(False)  # Controlled by format selection
+        
+        # Initialize subsettings state
+        self._update_subsettings_state(self.llm_finetuning.isChecked())
 
-    def on_llm_option_changed(self, state):
-        is_enabled = state == Qt.CheckState.Checked
-        logger.debug(f"LLM Fine-Tuning Enabled: {is_enabled}")
-        self.llm_options_group.setEnabled(is_enabled)
-
-        # Enable/disable child widgets
-        for widget in [
+    def _update_subsettings_state(self, enabled: bool):
+        """Update the enabled state of all subsettings"""
+        self.llm_options_group.setEnabled(enabled)
+        
+        widgets = [
             self.include_metadata,
             self.code_structure,
             self.skip_preprocessing,
             self.context_depth
-        ]:
-            widget.setEnabled(is_enabled)
+        ]
+        
+        for widget in widgets:
+            widget.setEnabled(enabled)
 
+    def _on_llm_option_changed(self, state):
+        """Handle changes to the main LLM option"""
+        is_enabled = state == Qt.CheckState.Checked.value
+        logger.debug(f"LLM Fine-Tuning Enabled: {is_enabled}")
+        
+        # Update subsettings state
+        self._update_subsettings_state(is_enabled)
+        
+        # Emit change signal
         self.optionChanged.emit()
 
     def on_option_changed(self, value):
         self.optionChanged.emit()
 
     def load_settings(self, settings_manager):
-        self.llm_finetuning.setChecked(settings_manager.load_setting("output/llm_finetuning", True, type_=bool))
+        # Load sub-settings first
         self.include_metadata.setChecked(settings_manager.load_setting("output/include_metadata", True, type_=bool))
         self.code_structure.setChecked(settings_manager.load_setting("output/code_structure", True, type_=bool))
         self.skip_preprocessing.setChecked(settings_manager.load_setting("output/skip_preprocessing", False, type_=bool))
         self.context_depth.setValue(settings_manager.load_setting("output/context_depth", 2, type_=int))
+        
+        # Load and apply main setting last
+        llm_enabled = settings_manager.load_setting("output/llm_finetuning", True, type_=bool)
+        self.llm_finetuning.setChecked(llm_enabled)
+        self._update_subsettings_state(llm_enabled)
 
     def save_settings(self, settings_manager):
         settings_manager.save_setting("output/llm_finetuning", self.llm_finetuning.isChecked())
@@ -115,15 +133,34 @@ class JsonlOptionsGroup(QGroupBox):
         }
 
     def set_options(self, options: dict):
-        self.llm_finetuning.setChecked(options.get('llm_finetuning', True))
+        # Set sub-options first
         self.include_metadata.setChecked(options.get('include_metadata', True))
         self.code_structure.setChecked(options.get('code_structure', True))
         self.skip_preprocessing.setChecked(options.get('skip_preprocessing', False))
         self.context_depth.setValue(options.get('context_depth', 2))
+        
+        # Set main option and update states
+        llm_enabled = options.get('llm_finetuning', True)
+        self.llm_finetuning.setChecked(llm_enabled)
+        self._update_subsettings_state(llm_enabled)
 
     def set_visible(self, visible: bool):
-        self.setVisible(visible)
-        if visible:
-            self.llm_finetuning.setChecked(True)
+        if not visible:
+            # Cache current options before hiding
+            self._cached_options = self.get_options()
+            self.setVisible(False)
         else:
-            self.llm_finetuning.setChecked(False)
+            self.setVisible(True)
+            # Restore cached options if available
+            if self._cached_options is not None:
+                self.set_options(self._cached_options)
+                self._cached_options = None
+            else:
+                # Default state if no cached options
+                self.set_options({
+                    'llm_finetuning': True,
+                    'include_metadata': True,
+                    'code_structure': True,
+                    'skip_preprocessing': False,
+                    'context_depth': 2
+                })
