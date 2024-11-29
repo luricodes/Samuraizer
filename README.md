@@ -4,7 +4,7 @@
 [![PyQt6](https://img.shields.io/badge/PyQt-6.0%2B-green.svg)](https://www.riverbankcomputing.com/software/pyqt/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A powerful Python-based analysis and processing tool with both command-line (CLI) and graphical (GUI) interfaces. Samuraizer provides comprehensive insights into your data structure, with advanced features for large-scale analysis and visualization.
+A powerful Python-based analysis and processing tool with both command-line (CLI) and graphical (GUI) interfaces. Samuraizer provides comprehensive insights into your data structure, with advanced features for large-scale analysis and visualization. Samuraizer analyses files from local folder structures or Git repositories and saves them in structured data formats of your choice. With the help of an intelligent caching system and file validation using hashing, scans of any size are processed in seconds.
 
 ## 🌟 Features
 
@@ -68,7 +68,7 @@ A powerful Python-based analysis and processing tool with both command-line (CLI
 - **Encoding Detection**: Smart character encoding detection and handling
 - **Size Analysis**: File and directory size analysis
 - **Binary Detection**: Intelligent binary file handling with size limits
-- **Hash Computation**: Multiple hash algorithm support (xxHash, MD5, SHA1, etc.)
+- **Hash Computation**: Fastest file validation with xxHash
 - **Metadata Extraction**: Comprehensive file metadata analysis
 - **Content Analysis**: Deep file content inspection and processing
 - **Binary Processing**: Specialized binary file handling and analysis
@@ -191,7 +191,7 @@ Options:
   --threads               Number of processing threads
   --max-size             Maximum file size (MB)
   --encoding             Default text encoding
-  --hash-algorithm       Hash algorithm (xxhash|md5|sha1|sha256)
+  --hash-algorithm       Hash algorithm xxhash
   --cache-path           Cache directory location
   --no-cache             Disable caching
   --verbose              Enable verbose logging
