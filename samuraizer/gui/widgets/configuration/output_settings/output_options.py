@@ -44,6 +44,9 @@ class OutputOptionsWidget(QWidget):
         # Additional Options Group
         self.createOptionsGroup(layout)
 
+        # JSONL Options Group
+        self.createJsonlGroup(layout)
+
         # Add stretch to keep everything aligned at the top
         layout.addStretch()
 
@@ -146,6 +149,36 @@ class OutputOptionsWidget(QWidget):
         group.setLayout(layout)
         parent_layout.addWidget(group)
 
+    def createJsonlGroup(self, parent_layout):
+        """Create JSONL-specific options group"""
+        self.jsonl_group = QGroupBox("JSONL Options")
+        layout = QFormLayout()
+
+        # LLM fine-tuning option
+        self.llm_finetuning = QCheckBox("Format for LLM fine-tuning")
+        self.llm_finetuning.setChecked(True)
+        self.llm_finetuning.stateChanged.connect(self.onOptionChanged)
+        layout.addRow("", self.llm_finetuning)
+
+        # Include metadata option
+        self.include_metadata = QCheckBox("Include metadata (id, timestamp, source)")
+        self.include_metadata.setChecked(True)
+        self.include_metadata.stateChanged.connect(self.onOptionChanged)
+        layout.addRow("", self.include_metadata)
+
+        # Description
+        jsonl_desc = QLabel(
+            "LLM fine-tuning format includes code, path, and language fields. "
+            "Metadata adds unique identifiers and timestamps."
+        )
+        jsonl_desc.setWordWrap(True)
+        jsonl_desc.setStyleSheet("color: gray;")
+        layout.addRow("", jsonl_desc)
+
+        self.jsonl_group.setLayout(layout)
+        self.jsonl_group.setVisible(False)  # Hidden by default until JSONL format is selected
+        parent_layout.addWidget(self.jsonl_group)
+
     def browseOutputFile(self):
         """Open file dialog to select output file location"""
         current_format = self.format_combo.currentText().lower()
@@ -214,6 +247,9 @@ class OutputOptionsWidget(QWidget):
         self.use_compression.setVisible(supports_compression)
         if not supports_compression:
             self.use_compression.setChecked(False)
+
+        # Update JSONL options visibility
+        self.jsonl_group.setVisible(format_name.upper() == "JSONL")
 
         # Update file extension in output path if a format is selected
         if self.output_path.text() and format_name != "Choose Output Format":
@@ -291,6 +327,8 @@ class OutputOptionsWidget(QWidget):
                 self.include_summary.setChecked(self.settings.value("output/include_summary", True, bool))
                 self.pretty_print.setChecked(self.settings.value("output/pretty_print", True, bool))
                 self.use_compression.setChecked(self.settings.value("output/use_compression", True, bool))
+                self.llm_finetuning.setChecked(self.settings.value("output/llm_finetuning", True, bool))
+                self.include_metadata.setChecked(self.settings.value("output/include_metadata", True, bool))
 
                 # Load last output path - removed parent directory check to allow restoring any valid path
                 last_path = self.settings.value("output/last_path", "")
@@ -320,6 +358,8 @@ class OutputOptionsWidget(QWidget):
                 self.settings.setValue("output/include_summary", self.include_summary.isChecked())
                 self.settings.setValue("output/pretty_print", self.pretty_print.isChecked())
                 self.settings.setValue("output/use_compression", self.use_compression.isChecked())
+                self.settings.setValue("output/llm_finetuning", self.llm_finetuning.isChecked())
+                self.settings.setValue("output/include_metadata", self.include_metadata.isChecked())
                 
                 # Force settings to sync to disk
                 self.settings.sync()
@@ -334,7 +374,7 @@ class OutputOptionsWidget(QWidget):
 
     def getConfiguration(self) -> dict:
         """Get the current output configuration"""
-        return {
+        config = {
             'format': self.format_combo.currentText().lower(),
             'output_path': self.output_path.text(),
             'streaming': self.enable_streaming.isChecked(),
@@ -342,6 +382,15 @@ class OutputOptionsWidget(QWidget):
             'pretty_print': self.pretty_print.isChecked(),
             'use_compression': self.use_compression.isChecked()
         }
+
+        # Add JSONL-specific options if JSONL format is selected
+        if self.format_combo.currentText().upper() == "JSONL":
+            config.update({
+                'llm_finetuning': self.llm_finetuning.isChecked(),
+                'include_metadata': self.include_metadata.isChecked()
+            })
+
+        return config
 
     def isStreamingSupported(self) -> bool:
         """Check if the selected format supports streaming"""

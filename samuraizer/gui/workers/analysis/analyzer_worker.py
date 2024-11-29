@@ -357,6 +357,13 @@ class AnalyzerWorker(QObject):
                 'pretty_print': output_config.get('pretty_print', True),
                 'use_compression': output_config.get('use_compression', False)
             }
+
+            # Add JSONL-specific options if format is JSONL
+            if output_format == 'jsonl':
+                formatter_config.update({
+                    'llm_finetuning': output_config.get('llm_finetuning', True),
+                    'include_metadata': output_config.get('include_metadata', True)
+                })
             
             # For JSONL format, ensure we're using streaming mode
             if output_format == 'jsonl' and not isinstance(results, Generator):
