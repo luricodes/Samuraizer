@@ -36,6 +36,7 @@ setup(
     name="samuraizer",
     version="1.0.0",
     author="Lucas Richert",
+    license='GNU GPLv3',
     author_email="info@lucasrichert.tech",
     description="A versatile analysis and processing tool with GUI support",
     packages=find_packages(include=[
@@ -58,7 +59,7 @@ setup(
         "Development Status :: 4 - Beta",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",
-        "License :: OSI Approved :: MIT License",
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
         "Operating System :: OS Independent",
         "Environment :: X11 Applications :: Qt",
     ],
