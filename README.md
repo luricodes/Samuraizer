@@ -11,40 +11,72 @@ A powerful Python-based analysis and processing tool with both command-line (CLI
 ### Core Features
 - **Multi-Interface Support**: Both CLI and GUI interfaces for maximum flexibility
 - **Advanced File Analysis**: Intelligent file type detection and content analysis
-- **Caching System**: SQLite-based caching for improved performance
+- **Caching System**: SQLite-based caching with automatic path management
 - **Multi-threaded Processing**: Parallel processing for faster analysis
 - **Smart File Handling**: Automatic encoding detection and binary file processing
+- **Signal Handling**: Graceful shutdown and resource cleanup
+- **Initialization System**: Robust application startup and configuration
+
+### GitHub Integration
+- **Repository Management**: Clone and analyze GitHub repositories
+- **Authentication**: Secure token-based GitHub authentication
+- **Branch Selection**: Support for selecting specific repository branches
+- **Multi-Repository**: Manage and analyze multiple repositories
+- **Progress Tracking**: Real-time clone and analysis progress
+- **URL Support**: Both HTTPS and SSH repository URLs
+- **Error Recovery**: Robust error handling and recovery
+
+### LLM Features
+- **Fine-tuning Support**: Enhanced code preprocessing for LLM training
+- **Token Estimation**: Intelligent token count estimation
+- **Code Structure Analysis**: Extract high-level code structures
+- **Context Extraction**: Smart context derivation from file paths
+- **Language Support**: Language-specific preprocessing
+- **Metadata Enhancement**: Rich metadata for training
+- **Code Pattern Recognition**: Advanced code pattern analysis
 
 ### Output Formats
 - **JSON**: Standard hierarchical format with optional pretty printing
 - **NDJSON**: Newline-delimited JSON for streaming large datasets
-- **YAML**: Human-readable structured format
+- **JSONL**: LLM-optimized format with code structure analysis
+- **YAML**: Human-readable structured format with validation
 - **XML**: Markup-based structured format
 - **DOT**: GraphViz format for visual representation
 - **CSV**: Tabular format for spreadsheet compatibility
 - **S-Expression**: LISP-style structured format
 - **MessagePack**: Compact binary format with compression
+- **Format Validation**: Data validation for all output formats
+- **Error Handling**: Robust error handling per format
+- **Configuration**: Format-specific output options
 
 ### GUI Features
 - **Dark/Light Theme**: Built-in theme switching support
 - **Interactive Visualizations**: 
   - Structure visualization
   - SVG-based graph rendering
-  - Interactive network graphs
+  - Interactive network graphs with real-time updates
+  - Dynamic graph manipulation
+  - Event-driven graph interactions
+  - Custom graph layouts and styling
 - **Real-time Progress**: Live progress tracking with ETA
 - **Multi-tab Interface**: Multiple analyses in parallel
 - **Configurable Settings**: Persistent user preferences
 - **Drag & Drop**: File and folder drag-and-drop support
+- **Repository Browser**: Integrated GitHub repository browser
 
 ### Analysis Capabilities
 - **File Type Detection**: Using python-magic for accurate type identification
 - **Encoding Detection**: Smart character encoding detection and handling
 - **Size Analysis**: File and directory size analysis
-- **Binary Detection**: Intelligent binary file handling
+- **Binary Detection**: Intelligent binary file handling with size limits
 - **Hash Computation**: Multiple hash algorithm support (xxHash, MD5, SHA1, etc.)
 - **Metadata Extraction**: Comprehensive file metadata analysis
+- **Content Analysis**: Deep file content inspection and processing
+- **Binary Processing**: Specialized binary file handling and analysis
+- **Text Processing**: Advanced text file analysis with encoding detection
 - **Symlink Handling**: Optional symbolic link following
 - **Error Recovery**: Robust error handling and reporting
+- **Code Analysis**: Advanced code structure and pattern analysis
 
 ## 🛠️ Installation
 
