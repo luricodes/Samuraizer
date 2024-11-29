@@ -6,6 +6,8 @@
 
 A powerful Python-based analysis and processing tool with both command-line (CLI) and graphical (GUI) interfaces. Samuraizer provides comprehensive insights into your data structure, with advanced features for large-scale analysis and visualization. Samuraizer analyses files from local folder structures or Git repositories and saves them in structured data formats of your choice. With the help of an intelligent caching system and file validation using hashing, scans of any size are processed in seconds.
 
+Additional Info: There are still a few minor bugs which are easy to handle but i dont have the time right now.
+
 ## 🌟 Features
 
 ### Core Features
