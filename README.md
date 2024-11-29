@@ -141,7 +141,7 @@ samuraizer_gui
 # - Interactive visualizations
 # - Results export
 ```
-
+![Alt Text](https://i.imgur.com/ZX5R6Rp.gif)
 ![Project Animation](https://i.imgur.com/ZX5R6Rp.gif)
 
 ### CLI Mode
