@@ -1,11 +1,11 @@
-# samuraizer_gui/ui/widgets/output_options.py
 import os
 import logging
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QLineEdit, QPushButton, QFileDialog,
-    QCheckBox, QLabel, QComboBox, QFormLayout, QMessageBox
+    QCheckBox, QLabel, QComboBox, QFormLayout, QMessageBox,
+    QSpinBox
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 
@@ -23,7 +23,7 @@ class OutputOptionsWidget(QWidget):
     _compression_formats = {"MESSAGEPACK"}
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__()
         self.settings = QSettings()
         self.initUI()
         self.loadSettings()
@@ -157,19 +157,56 @@ class OutputOptionsWidget(QWidget):
         # LLM fine-tuning option
         self.llm_finetuning = QCheckBox("Format for LLM fine-tuning")
         self.llm_finetuning.setChecked(True)
-        self.llm_finetuning.stateChanged.connect(self.onOptionChanged)
+        self.llm_finetuning.stateChanged.connect(self.onLLMOptionChanged)
         layout.addRow("", self.llm_finetuning)
 
+        # Create LLM options subgroup
+        self.llm_options_group = QGroupBox("Fine-tuning Options")
+        llm_options_layout = QFormLayout()
+        
         # Include metadata option
         self.include_metadata = QCheckBox("Include metadata (id, timestamp, source)")
         self.include_metadata.setChecked(True)
         self.include_metadata.stateChanged.connect(self.onOptionChanged)
-        layout.addRow("", self.include_metadata)
+        llm_options_layout.addRow("", self.include_metadata)
+
+        # Code structure option
+        self.code_structure = QCheckBox("Extract code structure (imports, functions, classes)")
+        self.code_structure.setChecked(True)
+        self.code_structure.stateChanged.connect(self.onOptionChanged)
+        llm_options_layout.addRow("", self.code_structure)
+
+        # Skip preprocessing option
+        self.skip_preprocessing = QCheckBox("Skip code preprocessing")
+        self.skip_preprocessing.setChecked(False)
+        self.skip_preprocessing.stateChanged.connect(self.onOptionChanged)
+        llm_options_layout.addRow("", self.skip_preprocessing)
+
+        # Context depth option
+        context_layout = QHBoxLayout()
+        self.context_depth = QSpinBox()
+        self.context_depth.setRange(1, 3)
+        self.context_depth.setValue(2)
+        self.context_depth.valueChanged.connect(self.onOptionChanged)
+        context_layout.addWidget(QLabel("Context Depth:"))
+        context_layout.addWidget(self.context_depth)
+        context_layout.addStretch()
+        llm_options_layout.addRow(context_layout)
+
+        # Context depth description
+        context_desc = QLabel(
+            "1=Basic, 2=Standard (recommended), 3=Detailed context extraction"
+        )
+        context_desc.setStyleSheet("color: gray;")
+        llm_options_layout.addRow("", context_desc)
+
+        self.llm_options_group.setLayout(llm_options_layout)
+        layout.addRow(self.llm_options_group)
 
         # Description
         jsonl_desc = QLabel(
-            "LLM fine-tuning format includes code, path, and language fields. "
-            "Metadata adds unique identifiers and timestamps."
+            "LLM fine-tuning format includes code content with optional structure analysis "
+            "and contextual information for improved training quality."
         )
         jsonl_desc.setWordWrap(True)
         jsonl_desc.setStyleSheet("color: gray;")
@@ -178,6 +215,46 @@ class OutputOptionsWidget(QWidget):
         self.jsonl_group.setLayout(layout)
         self.jsonl_group.setVisible(False)  # Hidden by default until JSONL format is selected
         parent_layout.addWidget(self.jsonl_group)
+
+        # Initialize the state of the LLM options
+        self.onLLMOptionChanged(self.llm_finetuning.checkState())
+
+    def onLLMOptionChanged(self, state):
+        """Handle changes to LLM fine-tuning option"""
+        is_enabled = state == Qt.CheckState.Checked
+        
+        # Enable/disable the options group itself
+        self.llm_options_group.setEnabled(is_enabled)
+        
+        # Update the visual state of child widgets
+        for widget in [self.include_metadata, self.code_structure, 
+                      self.skip_preprocessing, self.context_depth]:
+            widget.setEnabled(is_enabled)
+            # Update the widget's palette to ensure proper visual state
+            if is_enabled:
+                widget.setStyleSheet("")  # Reset any custom styling
+            else:
+                widget.setStyleSheet("QCheckBox, QSpinBox { color: gray; }")
+            
+            # Remove the transparent attribute to ensure widgets respond to mouse events when enabled
+            widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, not is_enabled)
+            # Force a style update
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+            widget.update()
+        
+        # Update the options group appearance
+        if is_enabled:
+            self.llm_options_group.setStyleSheet("")  # Reset any custom styling
+        else:
+            self.llm_options_group.setStyleSheet("QGroupBox { color: gray; }")
+        
+        # Force the options group to update its appearance
+        self.llm_options_group.style().unpolish(self.llm_options_group)
+        self.llm_options_group.style().polish(self.llm_options_group)
+        self.llm_options_group.update()
+        
+        self.onOptionChanged(state)
 
     def browseOutputFile(self):
         """Open file dialog to select output file location"""
@@ -222,7 +299,7 @@ class OutputOptionsWidget(QWidget):
             "JSON": "Standard JSON format with optional pretty printing",
             "YAML": "Human-readable YAML format",
             "XML": "XML format with optional pretty printing",
-            "JSONL": "JSON Lines Format encoded in UTF-8 (used for LLM finetuning)",
+            "JSONL": "JSON Lines Format with enhanced LLM fine-tuning support",
             "DOT": "GraphViz DOT format for visualization",
             "CSV": "Comma-separated values format",
             "S-Expression": "Lisp-style S-Expression format",
@@ -249,7 +326,20 @@ class OutputOptionsWidget(QWidget):
             self.use_compression.setChecked(False)
 
         # Update JSONL options visibility
-        self.jsonl_group.setVisible(format_name.upper() == "JSONL")
+        is_jsonl = format_name.upper() == "JSONL"
+        self.jsonl_group.setVisible(is_jsonl)
+        
+        # Reset and update LLM options when switching to JSONL
+        if is_jsonl:
+            # Ensure the LLM options are properly initialized
+            self.llm_finetuning.setChecked(True)
+            self.onLLMOptionChanged(Qt.CheckState.Checked)
+        else:
+            self.llm_finetuning.setChecked(False)
+            self.include_metadata.setChecked(False)
+            self.code_structure.setChecked(False)
+            self.skip_preprocessing.setChecked(False)
+            self.context_depth.setValue(2)
 
         # Update file extension in output path if a format is selected
         if self.output_path.text() and format_name != "Choose Output Format":
@@ -327,8 +417,13 @@ class OutputOptionsWidget(QWidget):
                 self.include_summary.setChecked(self.settings.value("output/include_summary", True, bool))
                 self.pretty_print.setChecked(self.settings.value("output/pretty_print", True, bool))
                 self.use_compression.setChecked(self.settings.value("output/use_compression", True, bool))
+                
+                # Load LLM settings
                 self.llm_finetuning.setChecked(self.settings.value("output/llm_finetuning", True, bool))
                 self.include_metadata.setChecked(self.settings.value("output/include_metadata", True, bool))
+                self.code_structure.setChecked(self.settings.value("output/code_structure", True, bool))
+                self.skip_preprocessing.setChecked(self.settings.value("output/skip_preprocessing", False, bool))
+                self.context_depth.setValue(self.settings.value("output/context_depth", 2, int))
 
                 # Load last output path - removed parent directory check to allow restoring any valid path
                 last_path = self.settings.value("output/last_path", "")
@@ -358,8 +453,13 @@ class OutputOptionsWidget(QWidget):
                 self.settings.setValue("output/include_summary", self.include_summary.isChecked())
                 self.settings.setValue("output/pretty_print", self.pretty_print.isChecked())
                 self.settings.setValue("output/use_compression", self.use_compression.isChecked())
+                
+                # Save LLM settings
                 self.settings.setValue("output/llm_finetuning", self.llm_finetuning.isChecked())
                 self.settings.setValue("output/include_metadata", self.include_metadata.isChecked())
+                self.settings.setValue("output/code_structure", self.code_structure.isChecked())
+                self.settings.setValue("output/skip_preprocessing", self.skip_preprocessing.isChecked())
+                self.settings.setValue("output/context_depth", self.context_depth.value())
                 
                 # Force settings to sync to disk
                 self.settings.sync()
@@ -387,7 +487,10 @@ class OutputOptionsWidget(QWidget):
         if self.format_combo.currentText().upper() == "JSONL":
             config.update({
                 'llm_finetuning': self.llm_finetuning.isChecked(),
-                'include_metadata': self.include_metadata.isChecked()
+                'include_metadata': self.include_metadata.isChecked(),
+                'code_structure': self.code_structure.isChecked(),
+                'skip_preprocessing': self.skip_preprocessing.isChecked(),
+                'context_depth': self.context_depth.value()
             })
 
         return config

@@ -362,8 +362,19 @@ class AnalyzerWorker(QObject):
             if output_format == 'jsonl':
                 formatter_config.update({
                     'llm_finetuning': output_config.get('llm_finetuning', True),
-                    'include_metadata': output_config.get('include_metadata', True)
+                    'include_metadata': output_config.get('include_metadata', True),
+                    'code_structure': output_config.get('code_structure', True),
+                    'skip_preprocessing': output_config.get('skip_preprocessing', False),
+                    'context_depth': output_config.get('context_depth', 2)
                 })
+                
+                # Log LLM fine-tuning configuration if enabled
+                if output_config.get('llm_finetuning', True):
+                    logger.info("LLM fine-tuning enabled with settings:")
+                    logger.info(f" - Metadata inclusion: {output_config.get('include_metadata', True)}")
+                    logger.info(f" - Code structure extraction: {output_config.get('code_structure', True)}")
+                    logger.info(f" - Code preprocessing: {not output_config.get('skip_preprocessing', False)}")
+                    logger.info(f" - Context depth: {output_config.get('context_depth', 2)}")
             
             # For JSONL format, ensure we're using streaming mode
             if output_format == 'jsonl' and not isinstance(results, Generator):

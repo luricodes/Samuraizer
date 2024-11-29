@@ -23,7 +23,8 @@ def parse_arguments():
             "Examples:\\n"
             "  samuraizer /path/to/repo -o output.json\\n"
             "  samuraizer --exclude-folders build dist --include-binary --format yaml\\n"
-            "  samuraizer /path/to/repo -o output.jsonl --format jsonl\\n"
+            "  samuraizer /path/to/repo -o output.jsonl --format jsonl --llm-finetuning\\n"
+            "  samuraizer /path/to/repo -o output.jsonl --format jsonl --llm-finetuning --include-metadata --code-structure\\n"
             "  samuraizer /path/to/repo -o output.dot --format dot\\n"
             "  samuraizer /path/to/repo -o output.csv --format csv\\n"
             "  samuraizer /path/to/repo -o output.sexp --format sexp\\n"
@@ -191,17 +192,39 @@ def parse_arguments():
         help="Disable file caching (slower but uses less disk space)"
     )
     
-    # Add new optional settings for JSONL
-    parser.add_argument(
+    # Enhanced JSONL/LLM options
+    llm_group = parser.add_argument_group('LLM Fine-tuning Options (JSONL only)')
+    
+    llm_group.add_argument(
         "--llm-finetuning",
         action="store_true",
         help="Format JSONL output for LLM fine-tuning."
     )
     
-    parser.add_argument(
+    llm_group.add_argument(
         "--include-metadata",
         action="store_true",
-        help="Include metadata fields in JSONL output."
+        help="Include metadata fields (id, timestamp, source, etc.) in JSONL output."
+    )
+    
+    llm_group.add_argument(
+        "--code-structure",
+        action="store_true",
+        help="Extract and include code structure information (imports, functions, classes)."
+    )
+    
+    llm_group.add_argument(
+        "--skip-preprocessing",
+        action="store_true",
+        help="Skip code preprocessing steps (cleaning, normalization)."
+    )
+    
+    llm_group.add_argument(
+        "--context-depth",
+        type=int,
+        choices=[1, 2, 3],
+        default=2,
+        help="Depth of context extraction from file paths (1=basic, 2=standard, 3=detailed)."
     )
 
     args = parser.parse_args()
@@ -241,8 +264,18 @@ def parse_arguments():
     if args.use_utc and args.repository_timezone:
         parser.error("Cannot use both --use-utc and --repository-timezone")
 
-    # Validate that --llm-finetuning and --include-metadata are only used with JSONL format
-    if (args.llm_finetuning or args.include_metadata) and args.format != "jsonl":
-        parser.error("--llm-finetuning and --include-metadata can only be used with --format jsonl")
+    # Validate LLM-related arguments
+    if args.format != "jsonl":
+        if any([args.llm_finetuning, args.include_metadata, args.code_structure, 
+                not args.skip_preprocessing, args.context_depth != 2]):
+            parser.error("LLM fine-tuning options can only be used with --format jsonl")
+    
+    # If LLM fine-tuning is enabled, provide helpful information
+    if args.llm_finetuning and args.format == "jsonl":
+        logger.info("LLM fine-tuning mode enabled with following settings:")
+        logger.info(f" - Metadata inclusion: {args.include_metadata}")
+        logger.info(f" - Code structure extraction: {args.code_structure}")
+        logger.info(f" - Code preprocessing: {not args.skip_preprocessing}")
+        logger.info(f" - Context depth: {args.context_depth}")
 
     return args
