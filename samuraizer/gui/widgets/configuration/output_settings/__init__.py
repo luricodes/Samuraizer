@@ -1,5 +1,3 @@
-from .output_options import OutputOptionsWidget
+# output_options/__init__.py
 
-__all__ = [
-    "OutputOptionsWidget",
-]
+from .main_widget import OutputOptionsWidget

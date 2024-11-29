@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
 
 from samuraizer.gui.widgets.configuration.analysis_options import AnalysisOptionsWidget
 from samuraizer.gui.widgets.configuration.filter_settings.file_filters import FileFiltersWidget
-from samuraizer.gui.widgets.configuration.output_settings.output_options import OutputOptionsWidget
+from samuraizer.gui.widgets.configuration.output_settings import OutputOptionsWidget
 
 from typing import TYPE_CHECKING
 from samuraizer.gui.windows.main.panels.base import BasePanel

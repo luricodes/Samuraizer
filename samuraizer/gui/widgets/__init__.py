@@ -1,6 +1,6 @@
 from .configuration.analysis_options import AnalysisOptionsWidget
 from .configuration.filter_settings.file_filters import FileFiltersWidget  
-from .configuration.output_settings.output_options import OutputOptionsWidget
+from .configuration.output_settings import OutputOptionsWidget
 from .analysis_viewer.main_viewer import ResultsViewWidget
 
 from .visualizations.interactive_graph import InteractiveGraphWidget
