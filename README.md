@@ -142,6 +142,8 @@ samuraizer_gui
 # - Results export
 ```
 
+![Project Animation](https://i.imgur.com/ZX5R6Rp.gif)
+
 ### CLI Mode
 ```bash
 # Basic usage
