@@ -37,7 +37,6 @@ A powerful Python-based analysis and processing tool with both command-line (CLI
 
 ### Output Formats
 - **JSON**: Standard hierarchical format with optional pretty printing
-- **NDJSON**: Newline-delimited JSON for streaming large datasets
 - **JSONL**: LLM-optimized format with code structure analysis
 - **YAML**: Human-readable structured format with validation
 - **XML**: Markup-based structured format
@@ -152,7 +151,7 @@ samuraizer /path/to/analyze -o output.json
 samuraizer /path/to/analyze -o output.yaml -f yaml
 
 # Enable streaming for large datasets
-samuraizer /path/to/analyze -o output.ndjson -f ndjson --stream
+samuraizer /path/to/analyze -o output.jsonl -f jsonl --stream
 
 # Include binary files
 samuraizer /path/to/analyze -o output.json --include-binary
@@ -181,7 +180,7 @@ Arguments:
 
 Options:
   -o, --output            Output file path
-  -f, --format            Output format (json|yaml|xml|ndjson|dot|csv|sexp|msgpack)
+  -f, --format            Output format (json|yaml|xml|jsonl|dot|csv|sexp|msgpack)
   --stream                Enable streaming mode
   --include-binary        Include binary files
   --exclude-folders       Folders to exclude
