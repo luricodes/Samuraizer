@@ -151,7 +151,7 @@ samuraizer /path/to/analyze -o output.json
 samuraizer /path/to/analyze -o output.yaml -f yaml
 
 # Enable streaming for large datasets
-samuraizer /path/to/analyze -o output.jsonl -f jsonl --stream
+samuraizer /path/to/analyze -o output.jsonl -f jsonl --stream --llm-finetuning
 
 # Include binary files
 samuraizer /path/to/analyze -o output.json --include-binary
