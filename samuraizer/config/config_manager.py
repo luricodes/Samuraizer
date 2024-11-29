@@ -195,11 +195,11 @@ class ConfigurationManager(Generic[WidgetType]):
         """Save current GUI filter settings to config file."""
         with self._lock:
             try:
-                if not hasattr(file_filters_widget, 'getConfiguration'):
-                    raise ConfigError("Invalid widget: missing getConfiguration method")
+                if not hasattr(file_filters_widget, 'get_configuration'):
+                    raise ConfigError("Invalid widget: missing get_configuration method")
                 
                 # Get current GUI values
-                current_config = file_filters_widget.getConfiguration()
+                current_config = file_filters_widget.get_configuration()
                 
                 # Validate configuration structure
                 required_keys = {'excluded_folders', 'excluded_files', 'exclude_patterns', 'image_extensions'}

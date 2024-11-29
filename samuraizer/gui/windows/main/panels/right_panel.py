@@ -60,7 +60,7 @@ class RightPanel(ResultsViewWidget):
         """
         return bool(self._configuration and self.result_processor.hasConfiguration())
     
-    def getConfiguration(self) -> Dict[str, Any]:
+    def get_configuration(self) -> Dict[str, Any]:
         """Get the current configuration.
         
         Returns:

@@ -118,7 +118,7 @@ class LeftPanel(BasePanel):
                 
             # Validate file filters (if any custom validation needed)
             try:
-                self.file_filters.getConfiguration()
+                self.file_filters.get_configuration()
             except Exception as e:
                 QMessageBox.warning(self, "Validation Error", f"Invalid file filters: {str(e)}")
                 return False
@@ -130,16 +130,16 @@ class LeftPanel(BasePanel):
             QMessageBox.critical(self, "Error", f"Error validating configuration: {str(e)}")
             return False
 
-    def getConfiguration(self) -> Dict[str, Any]:
+    def get_configuration(self) -> Dict[str, Any]:
         """Get the complete configuration from all widgets."""
         try:
             if not self.validate_inputs():
                 raise ValueError("Invalid configuration")
                 
             return {
-                'analysis': self.analysis_options.getConfiguration(),
-                'output': self.output_options.getConfiguration(),
-                'filters': self.file_filters.getConfiguration()
+                'analysis': self.analysis_options.get_configuration(),
+                'output': self.output_options.get_configuration(),
+                'filters': self.file_filters.get_configuration()
             }
         except Exception as e:
             logger.error(f"Error getting configuration: {e}", exc_info=True)

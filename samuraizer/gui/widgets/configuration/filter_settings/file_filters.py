@@ -317,7 +317,7 @@ class FileFiltersWidget(QWidget):
     def save_settings(self) -> None:
         """Save current settings through configuration manager"""
         try:
-            current_config = self.getConfiguration()
+            current_config = self.get_configuration()
             
             # Update configuration through manager
             self.config_manager.save_gui_filters(self)
@@ -351,7 +351,7 @@ class FileFiltersWidget(QWidget):
             logger.error(f"Error resetting to defaults: {e}")
             self.show_error("Reset Error", f"Failed to reset to defaults: {str(e)}")
 
-    def getConfiguration(self) -> Dict[str, Any]:
+    def get_configuration(self) -> Dict[str, Any]:
         """Get the current filter configuration"""
         return {
             'excluded_folders': list(self.folders_list.get_items()),

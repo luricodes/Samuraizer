@@ -250,9 +250,9 @@ class AnalysisManager:
                 raise ConfigurationError(error_msg)
                 
             # Get configurations from each panel
-            repository_config = self.left_panel.analysis_options.getConfiguration()
-            filters_config = self.left_panel.file_filters.getConfiguration()
-            output_config = self.left_panel.output_options.getConfiguration()
+            repository_config = self.left_panel.analysis_options.get_configuration()
+            filters_config = self.left_panel.file_filters.get_configuration()
+            output_config = self.left_panel.output_options.get_configuration()
 
             # Default image extensions
             image_extensions = {

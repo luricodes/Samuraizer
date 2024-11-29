@@ -18,6 +18,6 @@ class BasePanel(QWidget):
         """Validate panel inputs."""
         return True
         
-    def getConfiguration(self) -> Dict[str, Any]:
+    def get_configuration(self) -> Dict[str, Any]:
         """Get panel configuration."""
         raise NotImplementedError

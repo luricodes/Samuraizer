@@ -2,7 +2,7 @@
 
 import logging
 from PyQt6.QtWidgets import (
-    QGroupBox, QFormLayout, QCheckBox, QLabel, QHBoxLayout, QSpinBox
+    QGroupBox, QFormLayout, QCheckBox, QLabel, QHBoxLayout, QSpinBox, QSizePolicy
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 
@@ -52,6 +52,7 @@ class JsonlOptionsGroup(QGroupBox):
         context_layout.addWidget(self.context_depth)
         context_layout.addStretch()
         llm_options_layout.addRow(context_layout)
+        self.context_depth.setMinimumWidth(60)
 
         context_desc = QLabel(
             "1=Basic, 2=Standard (recommended), 3=Detailed context extraction"

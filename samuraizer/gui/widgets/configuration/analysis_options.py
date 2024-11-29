@@ -115,7 +115,7 @@ class AnalysisOptionsWidget(QWidget):
             return False
         return True
 
-    def getConfiguration(self) -> dict:
+    def get_configuration(self) -> dict:
         """Get the current configuration as a dictionary."""
         return {
             'repository_path': self.repository_widget.get_repository_path(),
