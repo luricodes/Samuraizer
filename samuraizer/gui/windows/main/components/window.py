@@ -1,8 +1,17 @@
 from pathlib import Path
 import logging
 from typing import Dict, Any
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox
-from PyQt6.QtCore import QSize, QSettings
+from PyQt6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QMessageBox,
+    QFrame,
+    QLabel,
+    QSizePolicy,
+    QSplitter,
+)
+from PyQt6.QtCore import QSize, QSettings, Qt
 from samuraizer.backend.cache.connection_pool import (
     initialize_connection_pool, close_all_connections, get_connection_context
 )
@@ -12,6 +21,7 @@ from samuraizer.gui.windows.base.window import BaseWindow
 from samuraizer.gui.windows.main.toolbar import MainToolBar
 from samuraizer.gui.windows.main.status import MainStatusBar
 from samuraizer.gui.windows.main.panels import LeftPanel, RightPanel
+from samuraizer.gui.app.theme_manager import ThemeManager
 from samuraizer.gui.windows.main.components.analysis import AnalysisManager
 from samuraizer.gui.windows.main.components.ui_state import UIStateManager, AnalysisState
 from samuraizer.gui.windows.main.components.dialog_manager import DialogManager
@@ -32,6 +42,7 @@ class MainWindow(BaseWindow):
 
         # Setup UI components in the correct order
         self.setup_ui()
+        self.updateThemeActionText(ThemeManager.get_saved_theme())
         
         # Initialize managers in the correct order
         # UIStateManager must be initialized first as others depend on it
@@ -102,10 +113,40 @@ class MainWindow(BaseWindow):
     def _create_central_widget(self) -> None:
         """Create and set up the central widget."""
         self.central_widget = QWidget()
-        self.central_widget.setObjectName("centralWidget")  # Set object name for styling
+        self.central_widget.setObjectName("centralWidget")
         self.setCentralWidget(self.central_widget)
-        self.main_layout = QHBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins for clean look
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(24, 24, 24, 24)
+        self.main_layout.setSpacing(16)
+
+    def _create_header(self) -> None:
+        """Create a hero header introducing the workspace."""
+        header_frame = QFrame()
+        header_frame.setObjectName("heroHeader")
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(24, 20, 24, 20)
+        header_layout.setSpacing(18)
+
+        title_container = QVBoxLayout()
+        title_container.setContentsMargins(0, 0, 0, 0)
+        title_container.setSpacing(6)
+
+        title_label = QLabel("Repository Intelligence")
+        title_label.setObjectName("heroTitle")
+
+        subtitle_label = QLabel(
+            "Configure detailed analysis parameters and monitor insights side by side."
+        )
+        subtitle_label.setObjectName("heroSubtitle")
+        subtitle_label.setWordWrap(True)
+
+        title_container.addWidget(title_label)
+        title_container.addWidget(subtitle_label)
+
+        header_layout.addLayout(title_container)
+        header_layout.addStretch()
+
+        self.main_layout.addWidget(header_frame)
 
     def _create_toolbars(self) -> None:
         """Create toolbar and status bar."""
@@ -116,10 +157,27 @@ class MainWindow(BaseWindow):
 
     def _create_panels(self) -> None:
         """Create and set up main panels."""
+        self._create_header()
+
+        self.content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.content_splitter.setObjectName("contentSplitter")
+        self.content_splitter.setChildrenCollapsible(False)
+        self.content_splitter.setHandleWidth(12)
+        self.content_splitter.setOpaqueResize(False)
+
         self.left_panel = LeftPanel(self)
+        self.left_panel.setMinimumWidth(360)
+        self.left_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        self.content_splitter.addWidget(self.left_panel)
+
         self.right_panel = RightPanel(self)
-        self.main_layout.addWidget(self.left_panel, 1)
-        self.main_layout.addWidget(self.right_panel, 2)
+        self.right_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.content_splitter.addWidget(self.right_panel)
+
+        self.content_splitter.setStretchFactor(0, 0)
+        self.content_splitter.setStretchFactor(1, 1)
+
+        self.main_layout.addWidget(self.content_splitter)
 
     # Public interface methods delegated to managers
     def open_repository(self) -> None:
@@ -146,6 +204,11 @@ class MainWindow(BaseWindow):
         """Handle theme toggle to specific theme."""
         if self.toggle_theme and callable(self.toggle_theme):
             self.toggle_theme(theme)
+
+    def updateThemeActionText(self, theme: str) -> None:
+        """Update the toolbar theme action text and icon."""
+        if hasattr(self, "toolbar") and hasattr(self.toolbar, "update_theme_action"):
+            self.toolbar.update_theme_action(theme)
 
     def get_connection_context(self):
         """Get the connection context for database operations."""

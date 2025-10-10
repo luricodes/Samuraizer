@@ -33,7 +33,8 @@ class LogPanel(QWidget):
         
         # Set size policy to allow complete collapse
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
-        
+        self.setObjectName("logPanel")
+
         self.initUI()
         self.loadSettings()
 
@@ -80,8 +81,12 @@ class LogPanel(QWidget):
 
         # Create toolbar
         toolbar = QToolBar()
-        toolbar.setFixedHeight(32)  # Fixed height for consistent appearance
+        toolbar.setObjectName("logPanelToolbar")
+        toolbar.setFixedHeight(36)
+        toolbar.setIconSize(QSize(16, 16))
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         layout.addWidget(toolbar)
+        self.toolbar = toolbar
 
         # Add level filter combo box
         self.level_filter = QComboBox()
@@ -93,9 +98,11 @@ class LogPanel(QWidget):
         
         # Add auto-scroll toggle
         self.auto_scroll_btn = QPushButton("Auto-scroll")
+        self.auto_scroll_btn.setObjectName("pillToggleButton")
         self.auto_scroll_btn.setCheckable(True)
         self.auto_scroll_btn.setChecked(True)
         self.auto_scroll_btn.toggled.connect(self.toggleAutoScroll)
+        self.auto_scroll_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         toolbar.addWidget(self.auto_scroll_btn)
         toolbar.addSeparator()
 
@@ -137,15 +144,18 @@ class LogPanel(QWidget):
 
         # Add clear and save buttons
         clear_btn = QPushButton("Clear")
+        clear_btn.setObjectName("secondaryActionButton")
         clear_btn.clicked.connect(self.clearLog)
         toolbar.addWidget(clear_btn)
-        
+
         save_btn = QPushButton("Save")
+        save_btn.setObjectName("secondaryActionButton")
         save_btn.clicked.connect(self.saveLogsToFile)
         toolbar.addWidget(save_btn)
         
         # Enhanced log display configuration
         self.log_display = QTextEdit()
+        self.log_display.setObjectName("logPanelText")
         self.log_display.setReadOnly(True)
         self.log_display.setFont(QFont("Consolas", 10))
         self.log_display.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)

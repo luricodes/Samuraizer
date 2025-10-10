@@ -2,7 +2,14 @@ import logging
 from typing import Optional, Dict, Any, TYPE_CHECKING
 from pathlib import Path
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QSplitter, QTabWidget, QMessageBox, QSplitterHandle
+    QWidget,
+    QVBoxLayout,
+    QSplitter,
+    QTabWidget,
+    QMessageBox,
+    QSplitterHandle,
+    QFrame,
+    QLabel,
 )
 from PyQt6.QtCore import Qt, QThread, QSettings
 from .components.progress_monitor import ProgressMonitor
@@ -83,18 +90,45 @@ class ResultsViewWidget(QWidget):
         self.setupLogging()
 
     def initUI(self):
+        self.setObjectName("resultsView")
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        results_card = QFrame()
+        results_card.setObjectName("panelCard")
+        card_layout = QVBoxLayout(results_card)
+        card_layout.setContentsMargins(24, 24, 24, 24)
+        card_layout.setSpacing(20)
+
+        header_layout = QVBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(6)
+
+        title_label = QLabel("Analysis Results")
+        title_label.setObjectName("panelTitle")
+
+        subtitle_label = QLabel("Track scan progress, inspect details, and review structured logs in real time.")
+        subtitle_label.setObjectName("panelSubtitle")
+        subtitle_label.setWordWrap(True)
+
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(subtitle_label)
+
+        card_layout.addLayout(header_layout)
 
         # Add progress monitor
-        layout.addWidget(self.progress_monitor)
+        card_layout.addWidget(self.progress_monitor)
 
         # Create main splitter with custom snap behavior
         self.main_splitter = CollapsibleSplitter(Qt.Orientation.Vertical)
-        layout.addWidget(self.main_splitter)
+        self.main_splitter.setObjectName("resultsSplitter")
+        card_layout.addWidget(self.main_splitter)
 
         # Upper content splitter (results + summary)
         self.content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.content_splitter.setObjectName("detailsSplitter")
         self.main_splitter.addWidget(self.content_splitter)
 
         # Create results tabs
@@ -133,6 +167,8 @@ class ResultsViewWidget(QWidget):
         # Set initial sizes for better default appearance
         self.content_splitter.setSizes([750, 350])
         self.main_splitter.setSizes([600, 180])
+
+        layout.addWidget(results_card)
 
         # Restore splitter states if they exist
         content_state = self.settings.value("content_splitter/state")

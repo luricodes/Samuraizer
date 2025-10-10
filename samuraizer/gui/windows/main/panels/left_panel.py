@@ -1,15 +1,22 @@
 from typing import TYPE_CHECKING, Dict, Any
 import logging
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, 
-    QPushButton, QTabWidget, QMessageBox
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QTabWidget,
+    QMessageBox,
+    QFrame,
+    QLabel,
+    QSizePolicy,
+    QStyle,
 )
+from PyQt6.QtCore import Qt
 
 from samuraizer.gui.widgets.configuration.analysis_options import AnalysisOptionsWidget
 from samuraizer.gui.widgets.configuration.filter_settings.file_filters import FileFiltersWidget
 from samuraizer.gui.widgets.configuration.output_settings import OutputOptionsWidget
 
-from typing import TYPE_CHECKING
 from samuraizer.gui.windows.main.panels.base import BasePanel
 if TYPE_CHECKING:
     from samuraizer.gui.windows.main.components.window import MainWindow
@@ -18,20 +25,54 @@ logger = logging.getLogger(__name__)
 
 class LeftPanel(BasePanel):
     """Left panel containing configuration options."""
-    
+
     def __init__(self, parent: 'MainWindow') -> None:
         super().__init__()
         self.main_window = parent
+        self.setObjectName("leftPanel")
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self.setup_ui()
         
     def setup_ui(self) -> None:
         """Set up the panel UI."""
         try:
             layout = QVBoxLayout(self)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(0)
+
+            panel_card = QFrame()
+            panel_card.setObjectName("panelCard")
+            card_layout = QVBoxLayout(panel_card)
+            card_layout.setContentsMargins(24, 24, 24, 24)
+            card_layout.setSpacing(24)
+
+            header_layout = QVBoxLayout()
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(6)
+
+            title_label = QLabel("Analysis Setup")
+            title_label.setObjectName("panelTitle")
+
+            subtitle_label = QLabel(
+                "Configure repository inputs, fine-tune the analysis engine, and control export targets."
+            )
+            subtitle_label.setObjectName("panelSubtitle")
+            subtitle_label.setWordWrap(True)
+
+            header_layout.addWidget(title_label)
+            header_layout.addWidget(subtitle_label)
+
+            card_layout.addLayout(header_layout)
 
             # Create configuration tabs
             self.config_tabs = QTabWidget()
-            
+            self.config_tabs.setObjectName("configurationTabs")
+            self.config_tabs.setDocumentMode(True)
+            self.config_tabs.setTabPosition(QTabWidget.TabPosition.North)
+            self.config_tabs.setElideMode(Qt.TextElideMode.ElideRight)
+            self.config_tabs.setMovable(False)
+            self.config_tabs.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
             # Analysis Options Tab
             self.analysis_options = AnalysisOptionsWidget()
             self.config_tabs.addTab(self.analysis_options, "Analysis Options")
@@ -44,55 +85,54 @@ class LeftPanel(BasePanel):
             self.file_filters = FileFiltersWidget()
             self.config_tabs.addTab(self.file_filters, "File Filters")
 
-            layout.addWidget(self.config_tabs)
+            card_layout.addWidget(self.config_tabs, 1)
+
+            helper_label = QLabel(
+                "Tip: Save your preferred configuration to reuse it on future repositories with a single click."
+            )
+            helper_label.setObjectName("panelHelper")
+            helper_label.setWordWrap(True)
+            card_layout.addWidget(helper_label)
 
             # Add control buttons
-            self.create_control_buttons(layout)
-            
+            self.create_control_buttons(card_layout)
+
+            layout.addWidget(panel_card)
+
         except Exception as e:
             logger.error(f"Error setting up left panel UI: {e}", exc_info=True)
             raise
-            
+
     def create_control_buttons(self, layout: QVBoxLayout) -> None:
         """Create the control buttons panel."""
         try:
-            buttons_layout = QHBoxLayout()
+            buttons_frame = QFrame()
+            buttons_frame.setObjectName("controlButtonBar")
+            buttons_layout = QHBoxLayout(buttons_frame)
+            buttons_layout.setContentsMargins(0, 0, 0, 0)
+            buttons_layout.setSpacing(12)
 
             # Analyze button
             self.analyze_btn = QPushButton("Start Analysis")
+            self.analyze_btn.setObjectName("primaryActionButton")
             self.analyze_btn.clicked.connect(self.main_window.start_analysis)
-            self.analyze_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #2ecc71;
-                    color: white;
-                    padding: 8px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #27ae60;
-                }
-            """)
+            self.analyze_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.analyze_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
 
             # Stop button
             self.stop_btn = QPushButton("Stop")
+            self.stop_btn.setObjectName("dangerActionButton")
             self.stop_btn.clicked.connect(self.main_window.stop_analysis)
             self.stop_btn.setEnabled(False)
-            self.stop_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #e74c3c;
-                    color: white;
-                    padding: 8px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #c0392b;
-                }
-            """)
+            self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.stop_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
 
             buttons_layout.addWidget(self.analyze_btn)
             buttons_layout.addWidget(self.stop_btn)
-            layout.addLayout(buttons_layout)
-            
+            buttons_layout.addStretch()
+
+            layout.addWidget(buttons_frame)
+
         except Exception as e:
             logger.error(f"Error creating control buttons: {e}", exc_info=True)
             raise
@@ -106,8 +146,8 @@ class LeftPanel(BasePanel):
                 return False
                 
             # Validate output path
-            output_path = self.output_options.output_path.text()
-            if not output_path or not self.output_options.validateOutputPath(output_path):
+            output_path = self.output_options.output_file_group.get_output_path()
+            if not output_path or not self.output_options.validate_output_path(output_path):
                 QMessageBox.warning(self, "Validation Error", "Please specify a valid output path")
                 return False
                 
