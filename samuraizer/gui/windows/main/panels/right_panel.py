@@ -21,6 +21,7 @@ class RightPanel(ResultsViewWidget):
         """
         super().__init__(parent)
         self.main_window = parent
+        self.setObjectName("rightPanel")
         self._configuration: Dict[str, Any] = {}
         self._results: Optional[Dict[str, Any]] = None
         

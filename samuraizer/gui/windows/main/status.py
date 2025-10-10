@@ -20,6 +20,7 @@ class MainStatusBar(QStatusBar):
         """
         super().__init__(parent)
         self.main_window = parent
+        self.setObjectName("mainStatusBar")
         self.setup_ui()
         
     def setup_ui(self) -> None:
@@ -30,13 +31,6 @@ class MainStatusBar(QStatusBar):
             
             # Set size grip
             self.setSizeGripEnabled(True)
-            
-            # Set style
-            self.setStyleSheet("""
-                QStatusBar {
-                    border-top: 1px solid #ccc;
-                }
-            """)
             
         except Exception as e:
             logger.error(f"Error setting up status bar: {e}", exc_info=True)
