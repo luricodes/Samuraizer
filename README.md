@@ -28,18 +28,9 @@ Additional Info: There are still a few minor bugs which are easy to handle but i
 - **URL Support**: Both HTTPS and SSH repository URLs
 - **Error Recovery**: Robust error handling and recovery
 
-### LLM Features
-- **Fine-tuning Support**: Enhanced code preprocessing for LLM training
-- **Token Estimation**: Intelligent token count estimation
-- **Code Structure Analysis**: Extract high-level code structures
-- **Context Extraction**: Smart context derivation from file paths
-- **Language Support**: Language-specific preprocessing
-- **Metadata Enhancement**: Rich metadata for training
-- **Code Pattern Recognition**: Advanced code pattern analysis
-
 ### Output Formats
 - **JSON**: Standard hierarchical format with optional pretty printing
-- **JSONL**: LLM-optimized format with code structure analysis
+- **JSONL**: Streaming-friendly newline-delimited JSON output
 - **YAML**: Human-readable structured format with validation
 - **XML**: Markup-based structured format
 - **DOT**: GraphViz format for visual representation
@@ -155,7 +146,7 @@ samuraizer /path/to/analyze -o output.json
 samuraizer /path/to/analyze -o output.yaml -f yaml
 
 # Enable streaming for large datasets
-samuraizer /path/to/analyze -o output.jsonl -f jsonl --stream --llm-finetuning
+samuraizer /path/to/analyze -o output.jsonl -f jsonl --stream
 
 # Include binary files
 samuraizer /path/to/analyze -o output.json --include-binary

@@ -49,20 +49,6 @@ class ExportOptionsGroup(BaseExportGroup):
             self.use_compression.setToolTip("Enable data compression (MessagePack only)")
             layout.addRow("", self.use_compression)
 
-            # LLM Fine-Tuning option (for JSONL)
-            self.llm_finetuning = QCheckBox("LLM Fine-Tuning")
-            self.llm_finetuning.setChecked(False)
-            self.llm_finetuning.setToolTip("Format JSONL output for LLM training.")
-            self.llm_finetuning.setEnabled(False)
-            layout.addRow("", self.llm_finetuning)
-
-            # Include Metadata option (for JSONL)
-            self.include_metadata = QCheckBox("Include Metadata")
-            self.include_metadata.setChecked(False)
-            self.include_metadata.setToolTip("Include metadata fields in JSONL output.")
-            self.include_metadata.setEnabled(False)
-            layout.addRow("", self.include_metadata)
-
             self.setLayout(layout)
             
         except Exception as e:
@@ -102,15 +88,6 @@ class ExportOptionsGroup(BaseExportGroup):
             if not self.use_compression.isEnabled():
                 self.use_compression.setChecked(False)
             
-            # Update LLM Fine-Tuning and Include Metadata availability
-            is_jsonl = format_name.lower() == "jsonl"
-            self.llm_finetuning.setEnabled(is_jsonl)
-            self.include_metadata.setEnabled(is_jsonl)
-            
-            if not is_jsonl:
-                self.llm_finetuning.setChecked(False)
-                self.include_metadata.setChecked(False)
-                    
         except Exception as e:
             logger.error(f"Error updating options state: {e}", exc_info=True)
             if hasattr(self.parent(), 'show_error'):
@@ -130,12 +107,6 @@ class ExportOptionsGroup(BaseExportGroup):
             )
             self.use_compression.setChecked(
                 self.settings.value("export/use_compression", True, bool)
-            )
-            self.llm_finetuning.setChecked(
-                self.settings.value("export/llm_finetuning", False, bool)
-            )
-            self.include_metadata.setChecked(
-                self.settings.value("export/include_metadata", False, bool)
             )
         except Exception as e:
             logger.error(f"Error loading export options settings: {e}", exc_info=True)
@@ -159,14 +130,6 @@ class ExportOptionsGroup(BaseExportGroup):
             self.settings.setValue(
                 "export/use_compression",
                 self.use_compression.isChecked()
-            )
-            self.settings.setValue(
-                "export/llm_finetuning",
-                self.llm_finetuning.isChecked()
-            )
-            self.settings.setValue(
-                "export/include_metadata",
-                self.include_metadata.isChecked()
             )
         except Exception as e:
             logger.error(f"Error saving export options settings: {e}", exc_info=True)

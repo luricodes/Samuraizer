@@ -1,11 +1,10 @@
 import logging
 from typing import Optional, Dict, Any, TYPE_CHECKING
-from datetime import datetime
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QSplitter, QTabWidget, QMessageBox, QSplitterHandle
 )
-from PyQt6.QtCore import Qt, QThread, QSettings, QTimer
+from PyQt6.QtCore import Qt, QThread, QSettings
 from .components.progress_monitor import ProgressMonitor
 from .components.result_tabs import ResultTabs
 from .handlers.result_processor import ResultProcessor
@@ -94,17 +93,21 @@ class ResultsViewWidget(QWidget):
         self.main_splitter = CollapsibleSplitter(Qt.Orientation.Vertical)
         layout.addWidget(self.main_splitter)
 
+        # Upper content splitter (results + summary)
+        self.content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter.addWidget(self.content_splitter)
+
         # Create results tabs
         self.results_tabs = ResultTabs()
-        self.results_tabs.currentChanged.connect(self._on_tab_changed)  # Add this connection
-        self.main_splitter.addWidget(self.results_tabs)
+        self.results_tabs.currentChanged.connect(self._on_tab_changed)
+        self.content_splitter.addWidget(self.results_tabs)
 
         # Initialize DetailsPanel within the method to avoid circular import
+        self.details_panel = None
         try:
             from ...windows.main.panels.details_panel import DetailsPanel
             self.details_panel = DetailsPanel(self)
-            self.details_panel.analysis_completed.connect(self._on_analysis_completed)  # Add this connection
-            self.main_splitter.addWidget(self.details_panel)
+            self.content_splitter.addWidget(self.details_panel)
         except ImportError as e:
             logger.error(f"Failed to import DetailsPanel: {e}", exc_info=True)
             QMessageBox.critical(
@@ -128,51 +131,24 @@ class ResultsViewWidget(QWidget):
             )
 
         # Set initial sizes for better default appearance
-        total_height = self.height()
-        self.main_splitter.setSizes([
-            int(total_height * 0.4),
-            int(total_height * 0.3),
-            int(total_height * 0.3)
-        ])
+        self.content_splitter.setSizes([750, 350])
+        self.main_splitter.setSizes([600, 180])
 
-        # Restore splitter state if it exists
+        # Restore splitter states if they exist
+        content_state = self.settings.value("content_splitter/state")
+        if content_state:
+            self.content_splitter.restoreState(content_state)
+
         splitter_state = self.settings.value("main_splitter/state")
         if splitter_state:
             self.main_splitter.restoreState(splitter_state)
 
     def _on_tab_changed(self, index: int):
         """Handle results tab changes."""
-        if index >= 0:
+        if index >= 0 and self.details_panel is not None:
             current_widget = self.results_tabs.widget(index)
             if hasattr(current_widget, 'results_data'):
                 self.details_panel.set_selection(current_widget.results_data)
-
-    def _on_analysis_completed(self, analysis_results: Dict[str, Any]):
-        """Handle completion of detailed analysis."""
-        try:
-            # Add analysis results to the current results data
-            if self.results_data is None:
-                self.results_data = {}
-            
-            analysis_type = analysis_results['type']
-            if 'detailed_analysis' not in self.results_data:
-                self.results_data['detailed_analysis'] = {}
-            
-            self.results_data['detailed_analysis'][analysis_type] = {
-                'timestamp': datetime.now().isoformat(),
-                'results': analysis_results['results']
-            }
-
-            # Log the completion
-            logger.info(f"Detailed analysis completed: {analysis_type}")
-            
-        except Exception as e:
-            logger.error(f"Error processing analysis results: {e}", exc_info=True)
-            QMessageBox.critical(
-                self,
-                "Analysis Error",
-                f"Error processing analysis results: {str(e)}"
-            )
 
     def setupLogging(self):
         """Set up logging to route messages to the GUI log panel."""
@@ -210,6 +186,8 @@ class ResultsViewWidget(QWidget):
         """Save logging-related settings."""
         try:
             self.settings.setValue("main_splitter/state", self.main_splitter.saveState())
+            if hasattr(self, "content_splitter"):
+                self.settings.setValue("content_splitter/state", self.content_splitter.saveState())
             self.log_panel.saveSettings()
         except Exception as e:
             logger.error(f"Failed to save logger state: {e}", exc_info=True)
@@ -336,6 +314,9 @@ class ResultsViewWidget(QWidget):
                         thread.deleteLater()
                     except RuntimeError:
                         pass
+
+            if getattr(self, "details_panel", None) is not None:
+                self.details_panel.clear()
                 
         except Exception as e:
             logger.error(f"Error during cleanup: {e}", exc_info=True)
@@ -385,7 +366,8 @@ class ResultsViewWidget(QWidget):
                 self.results_tabs.active_analyses.add(tab_name)
                 
                 # Update the details panel with the new results
-                self.details_panel.set_selection(results)
+                if self.details_panel is not None:
+                    self.details_panel.set_selection(results)
             
             self.progress_monitor.hideProgress()
             
@@ -428,14 +410,6 @@ class ResultsViewWidget(QWidget):
             if file_path:
                 # Direct export using provided path and last used settings
                 format_name = self.settings.value("export/format", "json")
-                # Add detailed analysis to the export data
-                export_data = results.copy()
-                if hasattr(self, 'details_panel'):
-                    if 'detailed_analysis' not in export_data:
-                        export_data['detailed_analysis'] = {}
-                    export_data['detailed_analysis'].update(
-                        self.results_data.get('detailed_analysis', {})
-                    )
                 # Implement export logic here using format_name and file_path
                 self.progress_monitor.updateStatus(f"Results exported to {file_path}")
             else:

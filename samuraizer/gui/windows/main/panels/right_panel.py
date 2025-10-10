@@ -43,9 +43,18 @@ class RightPanel(ResultsViewWidget):
                 raise ValueError("Configuration missing 'output' section")
                 
             self._configuration = config.copy()
-            
-            # Set configuration in result processor
+
+            # Set configuration on dependent components
             self.result_processor.setConfiguration(config)
+            if getattr(self, "details_panel", None) is not None:
+                try:
+                    self.details_panel.set_configuration(config)
+                except Exception as details_error:
+                    logger.warning(
+                        "Failed to update details panel configuration: %s",
+                        details_error,
+                        exc_info=True,
+                    )
             logger.debug("Configuration set in right panel and result processor")
             
         except Exception as e:
@@ -135,24 +144,8 @@ class RightPanel(ResultsViewWidget):
             
         try:
             self._results = results.copy()
-            
-            # Create view using result processor
-            view = self.result_processor.createView(results)
-            if not view:
-                raise RuntimeError("Failed to create result view")
-                
-            # Add new tab with the view
-            tab_name = f"Analysis {len(self.results_tabs.active_analyses) + 1}"
-            self.results_tabs.addTab(view, tab_name)
-            self.results_tabs.setCurrentWidget(view)
-            self.results_tabs.active_analyses.add(tab_name)
-            
-            # Hide progress indicators
-            self.progress_monitor.hideProgress()
-            self.progress_monitor.updateStatus("Analysis completed")
-            
+            super().analysisFinished(results)
             logger.info("Analysis results displayed successfully")
-            logger.info("────────────────────────────────────────")
             
         except Exception as e:
             error_msg = f"Failed to display analysis results: {str(e)}"

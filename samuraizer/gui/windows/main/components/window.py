@@ -1,13 +1,13 @@
 from pathlib import Path
 import logging
-from typing import Dict, Any, Optional
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox  
+from typing import Dict, Any
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox
 from PyQt6.QtCore import QSize, QSettings
 from samuraizer.backend.cache.connection_pool import (
     initialize_connection_pool, close_all_connections, get_connection_context
 )
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
-from samuraizer.core.application import get_cache_path, initialize_cache_directory
+from samuraizer.core.application import initialize_cache_directory
 from samuraizer.gui.windows.base.window import BaseWindow
 from samuraizer.gui.windows.main.toolbar import MainToolBar
 from samuraizer.gui.windows.main.status import MainStatusBar
@@ -16,7 +16,6 @@ from samuraizer.gui.windows.main.components.analysis import AnalysisManager
 from samuraizer.gui.windows.main.components.ui_state import UIStateManager, AnalysisState
 from samuraizer.gui.windows.main.components.dialog_manager import DialogManager
 from samuraizer.config.config_manager import ConfigurationManager
-from samuraizer.config.llm_config import LLMConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +29,7 @@ class MainWindow(BaseWindow):
         
         # Initialize toggle_theme as a no-op until it's properly set
         self.toggle_theme = lambda theme=None: None
-        
-        # Initialize LLM config manager
-        self.llm_config_manager = LLMConfigManager()
-        
+
         # Setup UI components in the correct order
         self.setup_ui()
         

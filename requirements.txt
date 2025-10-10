@@ -22,11 +22,8 @@ networkx>=3.0
 pydot
 graphviz>=0.20.1
 PyQtDarkTheme
-openai
 requests
-anthropic>=0.18.1  # Added for Claude API support
 keyring
-tiktoken
 
 # Platform-specific magic package
 python-magic-bin==0.4.14; platform_system == "Windows"

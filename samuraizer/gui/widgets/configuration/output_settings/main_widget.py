@@ -11,7 +11,6 @@ from .output_file_group import OutputFileGroup
 from .format_selection_group import FormatSelectionGroup
 from .streaming_options_group import StreamingOptionsGroup
 from .additional_options_group import AdditionalOptionsGroup
-from .jsonl_options_group import JsonlOptionsGroup
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +58,6 @@ class OutputOptionsWidget(QWidget):
         self.additional_options_group.optionChanged.connect(self.on_option_changed)
         layout.addWidget(self.additional_options_group)
 
-        # JSONL Options Group
-        self.jsonl_options_group = JsonlOptionsGroup()
-        self.jsonl_options_group.optionChanged.connect(self.on_option_changed)
-        layout.addWidget(self.jsonl_options_group)
-
         # Add stretch to keep everything aligned at the top
         layout.addStretch()
 
@@ -103,10 +97,6 @@ class OutputOptionsWidget(QWidget):
         self.additional_options_group.set_compression_visible(supports_compression)
         if not supports_compression:
             self.additional_options_group.use_compression.setChecked(False)
-
-        # Update JSONL options visibility
-        is_jsonl = format_upper == "JSONL"
-        self.jsonl_options_group.set_visible(is_jsonl)
 
         # Update file extension in output path if a format is selected
         if self.output_file_group.get_output_path() and format_name != "Choose Output Format":
@@ -158,10 +148,6 @@ class OutputOptionsWidget(QWidget):
             'use_compression': self.additional_options_group.use_compression.isChecked()
         }
 
-        # Add JSONL-specific options if JSONL format is selected
-        if self.format_selection_group.get_selected_format().upper() == "JSONL":
-            config.update(self.jsonl_options_group.get_options())
-
         return config
 
     def validate_output_path(self, path: str) -> bool:
@@ -199,7 +185,6 @@ class OutputOptionsWidget(QWidget):
                 streaming_enabled = self.settings_manager.load_setting("output/streaming", False, type_=bool)
                 self.streaming_options_group.enable_streaming.setChecked(streaming_enabled)
                 self.additional_options_group.load_settings(self.settings_manager)
-                self.jsonl_options_group.load_settings(self.settings_manager)
 
                 # Load last output path
                 self.output_file_group.load_settings()
@@ -218,7 +203,6 @@ class OutputOptionsWidget(QWidget):
                 self.settings_manager.save_setting("output/format", self.format_selection_group.get_selected_format())
                 self.settings_manager.save_setting("output/streaming", self.streaming_options_group.enable_streaming.isChecked())
                 self.additional_options_group.save_settings(self.settings_manager)
-                self.jsonl_options_group.save_settings(self.settings_manager)
                 self.output_file_group.save_settings(self.settings_manager)
         except Exception as e:
             logger.error(f"Error saving output settings: {e}", exc_info=True)

@@ -15,7 +15,7 @@ class FormatSelectionGroup(QGroupBox):
         "JSON": "Standard JSON format with optional pretty printing",
         "YAML": "Human-readable YAML format",
         "XML": "XML format with optional pretty printing",
-        "JSONL": "JSON Lines Format with enhanced LLM fine-tuning support",
+        "JSONL": "JSON Lines format ideal for streaming large result sets",
         "DOT": "GraphViz DOT format for visualization",
         "CSV": "Comma-separated values format",
         "S-Expression": "Lisp-style S-Expression format",

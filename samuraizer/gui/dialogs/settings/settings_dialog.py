@@ -12,7 +12,6 @@ from .groups import (
     CacheSettingsGroup
 )
 from .groups.timezone_settings import TimezoneSettingsGroup
-from .groups.llm_settings import LLMSettingsGroup
 
 if TYPE_CHECKING:
     from ...windows import MainWindow
@@ -42,7 +41,6 @@ class SettingsDialog(BaseDialog):
             self.theme_settings = ThemeSettingsGroup(self)
             self.cache_settings = CacheSettingsGroup(self)
             self.timezone_settings = TimezoneSettingsGroup(self)
-            self.llm_settings = LLMSettingsGroup(self)
             
             # Create tab pages with layouts
             # General tab
@@ -61,17 +59,9 @@ class SettingsDialog(BaseDialog):
             system_layout.addStretch()
             system_tab.setLayout(system_layout)
             
-            # LLM tab
-            llm_tab = QWidget()
-            llm_layout = QVBoxLayout()
-            llm_layout.addWidget(self.llm_settings)
-            llm_layout.addStretch()
-            llm_tab.setLayout(llm_layout)
-            
             # Add tabs to tab widget
             self.tab_widget.addTab(general_tab, "General")
             self.tab_widget.addTab(system_tab, "System")
-            self.tab_widget.addTab(llm_tab, "LLM API Settings")
             
             # Add tab widget to main layout
             self.main_layout.addWidget(self.tab_widget)
@@ -90,7 +80,6 @@ class SettingsDialog(BaseDialog):
             self.theme_settings.load_settings()
             self.cache_settings.load_settings()
             self.timezone_settings.load_settings()
-            self.llm_settings.load_settings()
             logger.debug("All settings loaded successfully")
         except Exception as e:
             logger.error(f"Error loading settings: {e}", exc_info=True)
@@ -103,7 +92,6 @@ class SettingsDialog(BaseDialog):
             self.theme_settings.save_settings()
             self.cache_settings.save_settings()
             self.timezone_settings.save_settings()
-            self.llm_settings.save_settings()
             
             # Force settings to sync to disk
             self.settings.sync()
@@ -119,8 +107,7 @@ class SettingsDialog(BaseDialog):
                 self.general_settings.validate() and
                 self.theme_settings.validate() and
                 self.cache_settings.validate() and
-                self.timezone_settings.validate() and
-                self.llm_settings.validate()
+                self.timezone_settings.validate()
             )
             return valid
         except Exception as e:
