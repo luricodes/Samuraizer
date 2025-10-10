@@ -1,19 +1,19 @@
 # QApplication setup and configuration
 import sys
 import logging
-from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt
 from .theme_manager import ThemeManager
 from .icons_manager import IconsManager
 from .logger import setup_logging
+from samuraizer.utils import remove_legacy_llm_artifacts
 
 logger = logging.getLogger(__name__)
 
 def setup_application() -> QApplication:
     """Initialize and configure the Qt Application."""
     app = QApplication(sys.argv)
-    
+
     # Set application metadata
     app.setApplicationName("Samuraizer")
     app.setApplicationVersion("1.0.0")
@@ -22,7 +22,10 @@ def setup_application() -> QApplication:
     
     # Initialize application icons
     IconsManager.initialize(app)
-    
+
+    # Ensure any persisted data from the removed LLM functionality is purged
+    remove_legacy_llm_artifacts()
+
     return app
 
 def run_application(window_class) -> None:

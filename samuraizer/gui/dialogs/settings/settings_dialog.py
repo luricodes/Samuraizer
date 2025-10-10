@@ -12,6 +12,7 @@ from .groups import (
     CacheSettingsGroup
 )
 from .groups.timezone_settings import TimezoneSettingsGroup
+from samuraizer.utils import remove_legacy_llm_artifacts
 
 if TYPE_CHECKING:
     from ...windows import MainWindow
@@ -33,6 +34,9 @@ class SettingsDialog(BaseDialog):
     def setup_ui(self) -> None:
         """Set up the dialog's user interface."""
         try:
+            # Remove any persisted configuration from the retired LLM feature
+            remove_legacy_llm_artifacts()
+
             # Create tab widget
             self.tab_widget = QTabWidget()
             
