@@ -14,6 +14,7 @@ from samuraizer.backend.cache.connection_pool import (
     initialize_connection_pool,
     get_connection_context,
     close_all_connections,
+    flush_pending_writes,
 )
 from samuraizer.cli.parser import parse_arguments
 from samuraizer.backend.services.config_services import (
@@ -267,6 +268,7 @@ def run() -> None:
         sys.exit(1)
     finally:
         try:
+            flush_pending_writes()
             close_all_connections()
             config_manager.cleanup()  # Clean up config manager
         except Exception as e:

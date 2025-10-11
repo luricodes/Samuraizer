@@ -60,7 +60,8 @@ def set_cached_entry(
     file_info: Dict[str, Any],
     size: int,
     mtime: float,
-    hash_algorithm: Optional[str] = "xxhash"
+    hash_algorithm: Optional[str] = "xxhash",
+    synchronous: bool = False,
 ) -> None:
     """
     Queue a cache entry for batch processing.
@@ -73,6 +74,7 @@ def set_cached_entry(
         size (int): File size
         mtime (float): File modification time
         hash_algorithm (Optional[str]): Hash algorithm used (default: xxhash)
+        synchronous (bool): Whether to block until the entry is persisted
     """
     try:
         # Convert file_info to JSON string
@@ -82,7 +84,7 @@ def set_cached_entry(
         entry = (file_path, file_hash, hash_algorithm, file_info_json, size, mtime)
         
         # Queue the write operation
-        queue_write(entry)
+        queue_write(entry, synchronous=synchronous)
         logger.debug(f"Queued cache entry for batch processing: {file_path}")
         
     except Exception as e:

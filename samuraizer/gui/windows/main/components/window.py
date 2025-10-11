@@ -3,7 +3,7 @@ import logging
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox
 from PyQt6.QtCore import QSize, QSettings
 from samuraizer.backend.cache.connection_pool import (
-    initialize_connection_pool, close_all_connections, get_connection_context
+    initialize_connection_pool, close_all_connections, get_connection_context, flush_pending_writes
 )
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
 from samuraizer.core.application import initialize_cache_directory
@@ -184,6 +184,7 @@ class MainWindow(BaseWindow):
 
             # Close database connections
             try:
+                flush_pending_writes()
                 close_all_connections()
                 logger.info("All database connections closed successfully")
             except Exception as e:
