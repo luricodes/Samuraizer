@@ -26,13 +26,14 @@ logger = logging.getLogger(__name__)
 class GitHubWidget(QWidget):
     """Widget for GitHub repository integration."""
 
-    repository_cloned = pyqtSignal(str)  # Emits the path to the cloned repo
+    repository_cloned = pyqtSignal(str, str)  # Emits the path to the cloned repo and selected branch
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.clone_worker = None
         self.temp_dir = None
         self.repo_info = None
+        self._cloning_branch: Optional[str] = None
         self.auth_manager = GitHubAuthManager()
         self._setup_ui()
 
@@ -194,6 +195,7 @@ class GitHubWidget(QWidget):
         # Start clone operation
         try:
             branch = self.branch_combo.currentText() if self.branch_combo.currentText() != "default" else None
+            self._cloning_branch = branch or (self.repo_info.get('default_branch') if self.repo_info else "default")
             access_token = self.auth_manager.get_access_token()
             self.clone_worker = GitCloneWorker(url, str(self.temp_dir), branch, access_token=access_token)
             self.clone_worker.progress.connect(self.status_widget.update_status)
@@ -217,7 +219,8 @@ class GitHubWidget(QWidget):
     def _handle_clone_success(self, repo_path: str):
         """Handle successful clone operation."""
         self.status_widget.update_status("Repository cloned successfully!", show_progress=False)
-        self.repository_cloned.emit(repo_path)
+        selected_branch = self._cloning_branch or "default"
+        self.repository_cloned.emit(repo_path, selected_branch)
         logger.info(f"Repository cloned successfully at: {repo_path}")
         self._reset_ui_state()
         self.url_input.clear()
@@ -230,6 +233,7 @@ class GitHubWidget(QWidget):
         self.branch_combo.setEnabled(True)
         self.auth_btn.setEnabled(True)
         self.status_widget.clear()
+        self._cloning_branch = None
         logger.debug("UI state has been reset.")
 
     def cleanup(self):
