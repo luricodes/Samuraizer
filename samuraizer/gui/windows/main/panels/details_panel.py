@@ -21,6 +21,7 @@ class DetailsPanel(QWidget):
         super().__init__(parent)
         self._repository_path: str = ""
         self._current_summary: Dict[str, Any] = {}
+        self._output_config: Dict[str, Any] = {}
         self._build_ui()
         self._apply_empty_state()
 
@@ -73,6 +74,36 @@ class DetailsPanel(QWidget):
         self.summary_group.setLayout(summary_layout)
         layout.addWidget(self.summary_group)
 
+        self.output_group = QGroupBox("Output configuration")
+        output_layout = QFormLayout()
+        output_layout.setContentsMargins(12, 12, 12, 12)
+        output_layout.setSpacing(8)
+
+        self.output_labels: Dict[str, QLabel] = {}
+        output_fields = [
+            ("format", "Format"),
+            ("output_path", "Destination"),
+            ("streaming", "Streaming"),
+            ("include_summary", "Include summary"),
+            ("pretty_print", "Pretty print"),
+            ("use_compression", "Compression"),
+        ]
+
+        for key, label in output_fields:
+            value_label = QLabel("-")
+            value_label.setObjectName(f"details_output_{key}")
+            value_label.setAlignment(
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+            )
+            value_label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextSelectableByMouse
+            )
+            output_layout.addRow(f"{label}:", value_label)
+            self.output_labels[key] = value_label
+
+        self.output_group.setLayout(output_layout)
+        layout.addWidget(self.output_group)
+
         self.failed_group = QGroupBox("Failed files")
         failed_layout = QVBoxLayout()
         failed_layout.setContentsMargins(12, 8, 12, 8)
@@ -95,13 +126,17 @@ class DetailsPanel(QWidget):
             if config:
                 repo_cfg = config.get("repository", {})
                 self._repository_path = repo_cfg.get("repository_path", "") or ""
+                self._output_config = config.get("output", {}) or {}
             else:
                 self._repository_path = ""
+                self._output_config = {}
         except Exception as exc:
             logger.error("Failed to read repository configuration: %s", exc, exc_info=True)
             self._repository_path = ""
+            self._output_config = {}
 
         self._update_repository_label()
+        self._update_output_display()
         if not self._current_summary:
             self._apply_empty_state()
 
@@ -119,6 +154,7 @@ class DetailsPanel(QWidget):
         self._current_summary = summary
         self._update_summary_display()
         self._update_failed_files(summary.get("failed_files", []))
+        self._update_output_display()
 
         self.description_label.setText("Overview of the latest analysis run.")
         self.summary_group.setVisible(True)
@@ -140,10 +176,12 @@ class DetailsPanel(QWidget):
             )
 
         for label in self.summary_labels.values():
-            label.setText("—")
+            label.setText("-")
 
         # Keep repository path visible even without results
         self._update_repository_label()
+        self._output_config = self._output_config or {}
+        self._update_output_display()
 
         self.summary_group.setVisible(False)
         self.failed_group.setVisible(False)
@@ -209,3 +247,38 @@ class DetailsPanel(QWidget):
             self.failed_list.addItem(item)
 
         self.failed_group.setVisible(True)
+
+    def _update_output_display(self) -> None:
+        if not getattr(self, "output_labels", None):
+            return
+
+        config = self._output_config or {}
+        if not config:
+            for label in self.output_labels.values():
+                label.setText("-")
+            self.output_group.setVisible(False)
+            return
+
+        def as_bool_text(value: Any) -> str:
+            return "Enabled" if bool(value) else "Disabled"
+
+        format_value = config.get("format") or "-"
+        if format_value not in {"", "-"}:
+            format_value = str(format_value).upper()
+        else:
+            format_value = "-"
+
+        destination = config.get("output_path") or "-"
+        streaming = config.get("streaming", False)
+        include_summary = config.get("include_summary", False)
+        pretty_print = config.get("pretty_print", False)
+        compression = config.get("use_compression", False)
+
+        self.output_labels["format"].setText(format_value)
+        self.output_labels["output_path"].setText(destination if destination.strip() else "-")
+        self.output_labels["streaming"].setText(as_bool_text(streaming))
+        self.output_labels["include_summary"].setText(as_bool_text(include_summary))
+        self.output_labels["pretty_print"].setText(as_bool_text(pretty_print))
+        self.output_labels["use_compression"].setText(as_bool_text(compression))
+
+        self.output_group.setVisible(True)

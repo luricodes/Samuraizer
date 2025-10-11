@@ -39,6 +39,13 @@ class LeftPanel(BasePanel):
             # Output Options Tab
             self.output_options = OutputOptionsWidget()
             self.config_tabs.addTab(self.output_options, "Output Options")
+            self.analysis_options.repository_widget.pathChanged.connect(
+                self.output_options.apply_repository_context
+            )
+            # Apply any existing repository selection to seed defaults
+            self.output_options.apply_repository_context(
+                self.analysis_options.repository_widget.get_repository_path()
+            )
 
             # File Filters Tab
             self.file_filters = FileFiltersWidget()
@@ -104,15 +111,24 @@ class LeftPanel(BasePanel):
             if not self.analysis_options.validateInputs():
                 QMessageBox.warning(self, "Validation Error", "Please configure repository path and analysis options correctly")
                 return False
+
+            # Ensure an output format is selected
+            selected_format = self.output_options.format_selection_group.get_selected_format()
+            if not selected_format or selected_format == "Choose Output Format":
+                QMessageBox.warning(self, "Validation Error", "Please choose an output format before starting the analysis")
+                return False
                 
             # Validate output path
-            output_path = self.output_options.output_path.text()
-            if not output_path or not self.output_options.validateOutputPath(output_path):
+            output_path = self.output_options.get_output_path()
+            if not output_path or not self.output_options.validate_output_path(output_path):
                 QMessageBox.warning(self, "Validation Error", "Please specify a valid output path")
                 return False
                 
             # Validate streaming configuration
-            if self.output_options.enable_streaming.isChecked() and not self.output_options.isStreamingSupported():
+            if (
+                self.output_options.streaming_options_group.enable_streaming.isChecked()
+                and not self.output_options.is_streaming_supported()
+            ):
                 QMessageBox.warning(self, "Validation Error", "Streaming is not supported for the selected format")
                 return False
                 

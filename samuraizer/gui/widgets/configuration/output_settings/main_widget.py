@@ -3,8 +3,9 @@
 import os
 import logging
 from pathlib import Path
+from typing import Optional
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 
 from .settings_manager import SettingsManager
 from .output_file_group import OutputFileGroup
@@ -28,8 +29,11 @@ class OutputOptionsWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings_manager = SettingsManager()
+        self._initializing: bool = True
         self.initUI()
         self.loadSettings()
+        self._initializing = False
+        self.emit_configuration_changed()
 
     def initUI(self):
         """Initialize the user interface"""
@@ -61,6 +65,9 @@ class OutputOptionsWidget(QWidget):
         # Add stretch to keep everything aligned at the top
         layout.addStretch()
 
+        # Ensure output file extension reflects the initial state
+        self.output_file_group.set_format(self.format_selection_group.get_selected_format())
+
     def get_file_extension(self, format_name: str) -> str:
         """Get the appropriate file extension for the selected format"""
         extensions = {
@@ -78,16 +85,20 @@ class OutputOptionsWidget(QWidget):
     def on_format_changed(self, format_name: str):
         """Handle format selection changes"""
         # Update format description is handled within FormatSelectionGroup
+        self.output_file_group.set_format(format_name)
 
         # Update streaming availability
-        format_upper = format_name.upper()
-        format_supports_streaming = format_upper in ["JSON", "JSONL", "MESSAGEPACK"]
+        format_upper = (format_name or "").upper()
+        if format_upper == "CHOOSE OUTPUT FORMAT":
+            format_upper = ""
+
+        format_supports_streaming = format_upper in {"JSON", "JSONL", "MESSAGEPACK"}
         self.streaming_options_group.enable_streaming.setEnabled(format_supports_streaming)
         if not format_supports_streaming:
             self.streaming_options_group.enable_streaming.setChecked(False)
 
         # Update pretty printing availability
-        supports_pretty_print = format_name in self._pretty_print_formats
+        supports_pretty_print = format_upper in self._pretty_print_formats
         self.additional_options_group.set_pretty_print_visible(supports_pretty_print)
         if not supports_pretty_print:
             self.additional_options_group.pretty_print.setChecked(False)
@@ -98,18 +109,17 @@ class OutputOptionsWidget(QWidget):
         if not supports_compression:
             self.additional_options_group.use_compression.setChecked(False)
 
-        # Update file extension in output path if a format is selected
-        if self.output_file_group.get_output_path() and format_name != "Choose Output Format":
-            current_path = Path(self.output_file_group.get_output_path())
-            new_extension = self.get_file_extension(format_name)
-            new_path = current_path.with_suffix(new_extension)
-            self.output_file_group.output_path.setText(str(new_path))
+        if self._initializing:
+            return
 
         self.emit_configuration_changed()
         self.saveSettings()
 
     def on_streaming_changed(self, is_enabled: bool):
         """Handle streaming option changes"""
+        if self._initializing:
+            return
+
         if is_enabled and not self.is_streaming_supported():
             QMessageBox.warning(
                 self,
@@ -119,28 +129,42 @@ class OutputOptionsWidget(QWidget):
             self.streaming_options_group.enable_streaming.setChecked(False)
             return
 
+        if self._initializing:
+            return
+
         self.emit_configuration_changed()
         self.saveSettings()
 
     def on_output_path_changed(self, path: str):
         """Handle output path changes"""
+        if self._initializing:
+            return
         self.emit_configuration_changed()
         self.saveSettings()
 
     def on_option_changed(self):
         """Handle changes to any option checkbox"""
+        if self._initializing:
+            return
         self.emit_configuration_changed()
         self.saveSettings()
 
     def emit_configuration_changed(self):
         """Emit signal with current configuration"""
+        if self._initializing:
+            return
         config = self.get_configuration()
         self.outputConfigChanged.emit(config)
 
     def get_configuration(self) -> dict:
         """Get the current output configuration"""
+        selected_format = self.format_selection_group.get_selected_format() or ""
+        format_value = selected_format.lower()
+        if format_value == "choose output format":
+            format_value = ""
+
         config = {
-            'format': self.format_selection_group.get_selected_format().lower(),
+            'format': format_value,
             'output_path': self.output_file_group.get_output_path(),
             'streaming': self.streaming_options_group.enable_streaming.isChecked(),
             'include_summary': self.additional_options_group.include_summary.isChecked(),
@@ -150,13 +174,14 @@ class OutputOptionsWidget(QWidget):
 
         return config
 
-    def validate_output_path(self, path: str) -> bool:
+    def validate_output_path(self, path: Optional[str] = None) -> bool:
         """Validate the output file path"""
-        if not path:
+        target_path = path or self.output_file_group.get_output_path()
+        if not target_path:
             return False
 
         try:
-            output_path = Path(path)
+            output_path = Path(target_path)
             output_dir = output_path.parent
 
             # Check if directory exists or can be created
@@ -196,6 +221,8 @@ class OutputOptionsWidget(QWidget):
             logger.error(f"Error loading output settings: {e}", exc_info=True)
 
     def saveSettings(self):
+        if self._initializing:
+            return
         try:
             # Only save settings if auto-save is enabled
             auto_save = self.settings_manager.load_setting("settings/auto_save", False, type_=bool)
@@ -211,3 +238,15 @@ class OutputOptionsWidget(QWidget):
         """Check if the selected format supports streaming"""
         format_name = self.format_selection_group.get_selected_format().upper()
         return format_name in ["JSON", "JSONL", "MESSAGEPACK"]
+
+    # ------------------------------------------------------------------ #
+    # Compatibility helpers
+    # ------------------------------------------------------------------ #
+    def get_output_path(self) -> str:
+        return self.output_file_group.get_output_path()
+
+    def validateOutputPath(self, path: Optional[str] = None) -> bool:  # noqa: N802 - Qt style compatibility
+        return self.validate_output_path(path)
+
+    def apply_repository_context(self, repository_path: str) -> None:
+        self.output_file_group.apply_repository_defaults(repository_path)
