@@ -4,110 +4,115 @@
 [![PyQt6](https://img.shields.io/badge/PyQt-6.0%2B-green.svg)](https://www.riverbankcomputing.com/software/pyqt/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A powerful Python-based analysis and processing tool with both command-line (CLI) and graphical (GUI) interfaces. Samuraizer provides comprehensive insights into your data structure, with advanced features for large-scale analysis and visualization. Samuraizer analyses files from local folder structures or Git repositories and saves them in structured data formats of your choice. With the help of an intelligent caching system and file validation using hashing, scans of any size are processed in seconds.
+Samuraizer is a Python-based data analysis and processing tool with both command-line (CLI) and graphical (GUI) interfaces. It is designed to provide deep insights into local file systems and Git repositories, with fast, scalable processing powered by caching, streaming, and parallelism. The project emphasizes a modular architecture, allowing easy extension of analysis, output formats, and user interfaces.
 
-Additional Info: There are still a few minor bugs which are easy to handle but i dont have the time right now.
+Known caveat: there are a few minor bugs mentioned by maintainers; these are tracked and resolved as time allows.
 
-## 🌟 Features
+## 🤖 What Samuraizer does
 
-### Core Features
-- **Multi-Interface Support**: Both CLI and GUI interfaces for maximum flexibility
-- **Advanced File Analysis**: Intelligent file type detection and content analysis
-- **Caching System**: SQLite-based caching with automatic path management
-- **Multi-threaded Processing**: Parallel processing for faster analysis
-- **Smart File Handling**: Automatic encoding detection and binary file processing
-- **Signal Handling**: Graceful shutdown and resource cleanup
-- **Initialization System**: Robust application startup and configuration
+- Analyzes files from local folders or Git repositories
+- Detects file types, encodings, and metadata
+- Hash-based caching for fast re-analysis
+- Streaming and non-streaming processing modes
+- Output to a variety of structured formats
+- GUI with visualizations and configuration options
+- GitHub integration for repository cloning and analysis
 
-### GitHub Integration
-- **Repository Management**: Clone and analyze GitHub repositories
-- **Authentication**: Secure token-based GitHub authentication
-- **Branch Selection**: Support for selecting specific repository branches
-- **Multi-Repository**: Manage and analyze multiple repositories
-- **Progress Tracking**: Real-time clone and analysis progress
-- **URL Support**: Both HTTPS and SSH repository URLs
-- **Error Recovery**: Robust error handling and recovery
+## 🧭 Features
 
-### Output Formats
-- **JSON**: Standard hierarchical format with optional pretty printing
-- **JSONL**: Streaming-friendly newline-delimited JSON output
-- **YAML**: Human-readable structured format with validation
-- **XML**: Markup-based structured format
-- **DOT**: GraphViz format for visual representation
-- **CSV**: Tabular format for spreadsheet compatibility
-- **S-Expression**: LISP-style structured format
-- **MessagePack**: Compact binary format with compression
-- **Format Validation**: Data validation for all output formats
-- **Error Handling**: Robust error handling per format
-- **Configuration**: Format-specific output options
+- Core Features
+  - Multi-Interface Support: CLI and GUI
+  - Advanced File Analysis: Smart type detection, encoding handling, and metadata extraction
+  - Caching System: SQLite-based, with path management and optional disabling
+  - Multi-threaded Processing: Parallel traversal and analysis
+  - Signal Handling: Clean shutdown and resource cleanup
+  - Initialization System: Robust startup/configuration
 
-### GUI Features
-- **Dark/Light Theme**: Built-in theme switching support
-- **Interactive Visualizations**: 
-  - Structure visualization
-  - SVG-based graph rendering
-  - Interactive network graphs with real-time updates
-  - Dynamic graph manipulation
-  - Event-driven graph interactions
-  - Custom graph layouts and styling
-- **Real-time Progress**: Live progress tracking with ETA
-- **Multi-tab Interface**: Multiple analyses in parallel
-- **Configurable Settings**: Persistent user preferences
-- **Drag & Drop**: File and folder drag-and-drop support
-- **Repository Browser**: Integrated GitHub repository browser
+- GitHub Integration
+  - Repository Management: Clone and analyze GitHub repositories
+  - Authentication: Token-based access
+  - Branch Selection: Per-repo branch control
+  - Multi-Repository: Manage and analyze several repos
+  - Progress Tracking: Real-time clone/analysis updates
+  - URL Support: HTTPS and SSH
+  - Error Recovery: Robust handling and recovery
 
-### Analysis Capabilities
-- **File Type Detection**: Using python-magic for accurate type identification
-- **Encoding Detection**: Smart character encoding detection and handling
-- **Size Analysis**: File and directory size analysis
-- **Binary Detection**: Intelligent binary file handling with size limits
-- **Hash Computation**: Fastest file validation with xxHash
-- **Metadata Extraction**: Comprehensive file metadata analysis
-- **Content Analysis**: Deep file content inspection and processing
-- **Binary Processing**: Specialized binary file handling and analysis
-- **Text Processing**: Advanced text file analysis with encoding detection
-- **Symlink Handling**: Optional symbolic link following
-- **Error Recovery**: Robust error handling and reporting
-- **Code Analysis**: Advanced code structure and pattern analysis
+- Output Formats
+  - JSON, JSONL, YAML, XML, DOT (GraphViz), CSV, S-Expression, MessagePack
+  - Format Validation and Robust Error Handling
+  - Per-format configuration options
+
+- GUI Features
+  - Dark/Light Theme with persistent preferences
+  - Interactive Visualizations: tree, graph, and network representations
+  - Real-time Progress with ETA
+  - Multi-tab analyses and configurable settings
+  - Drag & Drop for file/folder input
+  - Integrated GitHub repository browser
+
+- Analysis Capabilities
+  - File Type Detection (python-magic)
+  - Encoding Detection and Handling
+  - Size Analysis, Binary Detection, and Hash Computation (xxHash)
+  - Metadata Extraction and Content Analysis
+  - Binary and Text Processing
+  - Symlink Handling (configurable)
+  - Code Analysis and Problem Reporting
+
+- Architecture Overview
+  - Core Engine: Traversal, content analysis, caching, event handling
+  - GUI Layer: PyQt6-based interface, visualizations, settings, progress
+  - Analysis Pipeline: Type detection, processing, metadata, cache interaction
+  - Output Generation: Format conversion, streaming, compression, export
+
+## 🧰 Tech Stack
+
+- Python 3.9+ (core logic, CLI, and scripting)
+- PyQt6 (GUI)
+- SQLite (cache)
+- GraphViz (DOT output)
+- xxHash (fast hashing)
+- python-magic (file type detection)
+- NetworkX / PyVis (visualizations)
+- Colorama / tqdm (CLI UX)
 
 ## 🛠️ Installation
 
-### Prerequisites
-```bash
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install python3.9 python3-pip python3-venv
-sudo apt-get install qt6-base-dev qt6-webengine-dev
-sudo apt-get install graphviz graphviz-dev
+Prerequisites
+- Python 3.9+ (virtual environments recommended)
+- Qt 6 (for GUI)
+- Graphviz (for DOT/visualization)
 
-# macOS
-brew install python@3.9
-brew install qt@6
-brew install graphviz
+Windows:
+- Install Python 3.9+
+- Install Graphviz
+- Install dependencies in a virtual environment
 
-# Windows
-# Install Python 3.9+ from python.org
-# Install GraphViz from graphviz.org
-```
+Linux/macOS:
+- Install Python 3.9+
+- Install Qt 6 and Graphviz
+- Create and activate a virtual environment, then install dependencies
 
-### Installation Methods
+Installation Methods
 
-#### 1. Using pip (Recommended)
+1) Using pip (Recommended)
 ```bash
 # Create and activate virtual environment
 python -m venv venv
-source venv/bin/activate  # Linux/macOS
-venv\Scripts\activate     # Windows
+# Linux/macOS
+source venv/bin/activate
+# Windows
+venv\Scripts\activate
 
 # Install the package
 pip install samuraizer
 ```
 
-#### 2. From Source
+2) From Source
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/samuraizer
-cd samuraizer
+git clone https://github.com/luricodes/Samuraizer.git
+cd Samuraizer
 
 # Install dependencies
 pip install -r requirements.txt
@@ -115,97 +120,85 @@ pip install -r requirements.txt
 # Development dependencies (optional)
 pip install -r requirements-dev.txt
 
-# Install package
+# Install package in editable mode
 pip install -e .
 ```
 
-## 📊 Usage
+## 🚀 Quick Start
 
-### GUI Mode
+CLI mode
+- Analyze a directory and output to a file
 ```bash
-# Launch GUI application
-samuraizer_gui
-
-# The GUI provides:
-# - File/folder selection via browse or drag-drop
-# - Output format selection
-# - Analysis configuration
-# - Real-time progress monitoring
-# - Interactive visualizations
-# - Results export
-```
-
-![](https://github.com/luricodes/Samuraizer/blob/main/samuraizer/resources/usage_example.gif)
-
-### CLI Mode
-```bash
-# Basic usage
 samuraizer /path/to/analyze -o output.json
+```
 
-# Specify format
+- Choose a format
+```bash
 samuraizer /path/to/analyze -o output.yaml -f yaml
+```
 
-# Enable streaming for large datasets
+- Streaming mode for large datasets
+```bash
 samuraizer /path/to/analyze -o output.jsonl -f jsonl --stream
+```
 
-# Include binary files
+- Include binaries
+```bash
 samuraizer /path/to/analyze -o output.json --include-binary
+```
 
-# Custom exclusions
+- Advanced options
+```bash
 samuraizer /path/to/analyze -o output.json \
-    --exclude-folders node_modules dist \
-    --exclude-files "*.pyc" "*.log" \
-    --exclude-patterns "test_*" "*.tmp"
-
-# Advanced options
-samuraizer /path/to/analyze -o output.json \
-    --threads 8 \
-    --max-size 100 \
-    --follow-symlinks \
-    --hash-algorithm xxhash \
-    --encoding utf-8
+  --threads 8 \
+  --max-size 100 \
+  --follow-symlinks \
+  --hash-algorithm xxhash \
+  --encoding utf-8
 ```
 
-## ⚙️ Configuration
-
-### CLI Options
-```
-Arguments:
-  root_directory           Directory to analyze
-
-Options:
-  -o, --output            Output file path
-  -f, --format            Output format (json|yaml|xml|jsonl|dot|csv|sexp|msgpack)
-  --stream                Enable streaming mode
-  --include-binary        Include binary files
-  --exclude-folders       Folders to exclude
-  --exclude-files         Files to exclude
-  --exclude-patterns      Glob/regex patterns to exclude
-  --image-extensions      Additional image extensions
-  --follow-symlinks       Follow symbolic links
-  --threads               Number of processing threads
-  --max-size             Maximum file size (MB)
-  --encoding             Default text encoding
-  --hash-algorithm       Hash algorithm xxhash
-  --cache-path           Cache directory location
-  --no-cache             Disable caching
-  --verbose              Enable verbose logging
-  --log-file            Log file path
+GUI mode
+- Launch GUI
+```bash
+samuraizer_gui
 ```
 
-### GUI Settings
-- **Theme**: Dark/Light mode selection
-- **Caching**: Enable/disable and configure caching
-- **Performance**: Thread count and batch size
-- **Output**: Format and compression options
-- **Filters**: File/folder exclusion patterns
-- **Visualization**: Graph and display options
+- The GUI offers file/folder selection, output settings, analysis configuration, real-time progress, and rich visualizations.
+- The included usage GIF demonstrates drag-and-drop, graphs, and export workflows.
 
-### Configuration File
+Note: The CLI and GUI share the same core analysis engine and output pipeline, but expose different configuration surfaces.
+
+## 📐 Configuration
+
+CLI Options (highlights)
+- root_directory: Directory to analyze
+- -o, --output: Output file path
+- -f, --format: Output format (json|yaml|xml|jsonl|dot|csv|sexp|msgpack)
+- --stream: Enable streaming mode
+- --include-binary: Include binary files
+- --exclude-folders, --exclude-files, --exclude-patterns: Exclusion controls
+- --image-extensions: Additional image extensions
+- --follow-symlinks: Follow symbolic links
+- --threads: Number of processing threads
+- --max-size: Maximum file size (MB)
+- --encoding: Text encoding
+- --hash-algorithm: Hash algorithm (default xxhash)
+- --cache-path: Cache directory location
+- --no-cache: Disable caching
+- --verbose, --log-file: Logging controls
+
+GUI Settings
+- Theme (Dark/Light)
+- Caching controls
+- Performance: thread count, batch size
+- Output format and compression
+- Filters: exclusion patterns
+- Visualization: graph display options
+
+Configuration File (yaml example)
 ```yaml
-# config.yaml
 analysis:
-  max_file_size: 50  # MB
+  max_file_size: 50
   include_binary: false
   follow_symlinks: false
   thread_count: 4
@@ -216,11 +209,8 @@ filters:
   excluded_folders:
     - node_modules
     - .git
-    - venv
   excluded_files:
     - "*.pyc"
-    - "*.pyo"
-    - ".DS_Store"
   exclude_patterns:
     - "test_*"
     - "*.tmp"
@@ -233,138 +223,97 @@ output:
   use_compression: false
 ```
 
-## 🔄 Cache System
+Cache System
+- SQLite-based cache in a .cache folder
+- Path management, pooling, and automatic cleanup
+- Optional disable via --no-cache
 
-The analyzer uses SQLite for caching to improve performance:
+Visualization
+- Tree, Graph, and Network views
+- Interactive layouts, export options (DOT/SVG)
 
-- **Location**: Default `.cache` directory in working directory
-- **Strategy**: File hash and metadata-based caching
-- **Pooling**: Connection pooling for concurrent access
-- **Maintenance**: Automatic cleanup of outdated entries
-- **Control**: Can be disabled via --no-cache flag
+Advanced Features
+- Streaming mode for memory-efficient processing
+- Binary file handling with size limits
+- Error recovery and partial result preservation
 
-## 🎨 Visualization
+## 🏗️ Architecture and Data Flow
 
-The GUI provides multiple visualization options:
+- Core Engine
+  - Traversal and analysis of file trees
+  - Cache management and invalidation
+  - Event-driven architecture for status updates
 
-### Tree View
-- Hierarchical structure visualization
-- File metadata display
-- Expandable/collapsible nodes
-- Search and filter capabilities
+- GUI Layer
+  - PyQt6-based interface
+  - Real-time progress, plots, and configuration panels
 
-### Graph View
-- Interactive node-based visualization
-- Zoom and pan controls
-- Node filtering and highlighting
-- Export to DOT/SVG formats
+- Analysis Pipeline
+  - File type detection (python-magic)
+  - Encoding and binary handling
+  - Metadata extraction and content analysis
+  - Symlink handling and error reporting
 
-### Network View
-- Force-directed graph layout
-- Interactive node manipulation
-- Relationship visualization
-- Custom node styling
+- Output Generation
+  - Format conversion and streaming
+  - Output writers for multiple formats
+  - Validation and compression controls
 
-## 🔍 Advanced Features
+Data Flow Outline
+1) User provides root_directory and options via CLI or GUI
+2) Cache is initialized or connected (xxHash pathway)
+3) Directory structure is traversed (or streamed) by traversal modules
+4) Analysis pipeline extracts metadata, content, and structure
+5) Output is formatted by OutputFactory into the chosen format
+6) Results saved to disk with progress updates and error handling
+7) Cleanup and resource finalization
 
-### Streaming Mode
-- Memory-efficient processing
-- Real-time output generation
-- Progress tracking
-- Suitable for large datasets
+## 🧪 Testing and Development
 
-### Binary File Handling
-- Automatic binary detection
-- Configurable size limits
-- Optional base64 encoding
-- Image file detection
-
-### Error Recovery
-- Graceful error handling
-- Detailed error reporting
-- Partial results preservation
-- Recovery suggestions
-
-## 🏗️ Architecture
-
-### Components
-1. **Core Engine**
-   - File traversal
-   - Content analysis
-   - Cache management
-   - Event handling
-
-2. **GUI Layer**
-   - PyQt6-based interface
-   - Visualization components
-   - Settings management
-   - Progress tracking
-
-3. **Analysis Pipeline**
-   - File type detection
-   - Content processing
-   - Metadata extraction
-   - Cache interaction
-
-4. **Output Generation**
-   - Format conversion
-   - Stream processing
-   - Compression handling
-   - Export management
-
-## 🤝 Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests (`pytest`)
-5. Commit changes (`git commit -m 'Add amazing feature'`)
-6. Push to branch (`git push origin feature/amazing-feature`)
-7. Create Pull Request
-
-### Development Setup
+Development setup
+- Install development dependencies
 ```bash
-# Install development dependencies
 pip install -r requirements-dev.txt
+```
 
-# Run tests
+Testing
+```bash
 pytest
+```
 
-# Code formatting
+Code quality
+- Black, isort, mypy, flake8
+```bash
 black .
 isort .
-
-# Type checking
 mypy .
-
-# Linting
 flake8
 ```
 
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (git checkout -b feature/awesome-feature)
+3. Implement changes
+4. Run tests (pytest)
+5. Commit with a descriptive message
+6. Push and open a Pull Request
+
+Development notes
+- Follow the repository’s code style
+- Add tests for new features
+- Update documentation as needed
+
 ## 📝 License
 
-## License
-
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
+This project is licensed under the GNU General Public License v3.0 (GPL-3.0). See LICENSE for details.
 
 ## 🙏 Acknowledgments
 
-Built with these amazing libraries:
-- PyQt6 - GUI framework
-- python-magic - File type detection
-- charset-normalizer - Encoding detection
-- xxhash - Fast hashing
-- SQLite - Caching system
-- GraphViz - Graph visualization
-- NetworkX - Graph processing
-- PyVis - Interactive visualization
-- Colorama - Terminal colors
-- tqdm - Progress bars
+Samuraizer leverages a number of open-source libraries:
+- PyQt6, python-magic, charset-normalizer, xxhash, SQLite, GraphViz, NetworkX, PyVis, Colorama, tqdm
 
 ## 📫 Contact
 
-For questions and support:
-- GitHub Issues: [Create an issue](https://github.com/yourusername/samuraizer/issues)
+- GitHub Issues: https://github.com/luricodes/Samuraizer/issues
 - Email: info@lucasrichert.tech
