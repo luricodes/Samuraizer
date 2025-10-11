@@ -16,10 +16,11 @@ from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
     QToolButton,
+    QStyle,
     QSizePolicy,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QStyle
+from PyQt6.QtGui import QIcon
 
 from .github_widget import GitHubWidget
 from .repository_list_widget import RepositoryListWidget
