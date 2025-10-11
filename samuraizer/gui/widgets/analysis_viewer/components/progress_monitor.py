@@ -178,10 +178,10 @@ class ProgressMonitor(QWidget):
         status_layout.setSpacing(5)
         
         self.status_label = ModernLabel("Ready")
-        self.file_count_label = ModernLabel("Files: 0")
+        self.file_count_label = ModernLabel("Processed: 0")
         
         self.status_label.setToolTip("Current analysis status")
-        self.file_count_label.setToolTip("Total number of files detected")
+        self.file_count_label.setToolTip("Processed files and estimated totals")
         
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.file_count_label)
@@ -227,27 +227,47 @@ class ProgressMonitor(QWidget):
         if self.start_time and self.processed_count > 0:
             elapsed_time = (datetime.now() - self.start_time).total_seconds()
             files_per_second = self.processed_count / elapsed_time
-            
+
             tooltip = (
                 f"Processing Speed: {files_per_second:.1f} files/second\n"
                 f"Processed: {self.processed_count} files\n"
-                f"Remaining: {self.total_count - self.processed_count} files\n"
+                f"Remaining: {max(self.total_count - self.processed_count, 0)} files\n"
                 f"Elapsed Time: {self._format_time(elapsed_time)}"
             )
-            
+
             self.progress_bar.setToolTip(tooltip)
 
     def updateProgress(self, current: int, total: int):
         try:
             self.processed_count = current
             self.total_count = total
-            
+
             if total <= 0:
-                self.progress_bar.setMaximum(0)
+                if not self.start_time and current > 0:
+                    self.start_time = datetime.now()
+                    self.progress_bar.reset()
+
                 self.progress_bar.setMinimum(0)
-                self.time_estimate_label.hide()
-                self.progress_bar.hide()
-                self.progress_bar.reset()
+                self.progress_bar.setMaximum(0)
+                self.progress_bar.setFormat(f"Processing... ({current} files)")
+                self.progress_bar.show()
+                self.file_count_label.setText(
+                    f"Processed: {current} (estimating total)"
+                )
+
+                if current > 0 and self.start_time:
+                    elapsed_time = (datetime.now() - self.start_time).total_seconds()
+                    elapsed_formatted = self._format_time(elapsed_time)
+                    self.time_estimate_label.setText(
+                        f"Elapsed: {elapsed_formatted} | Estimating total..."
+                    )
+                    self.time_estimate_label.show()
+                    self.progress_bar.setToolTip(
+                        f"Processed {current} files. Total count is being estimated."
+                    )
+                else:
+                    self.time_estimate_label.hide()
+                    self.progress_bar.setToolTip("Estimating total number of files...")
             else:
                 if not self.start_time and current > 0:
                     self.start_time = datetime.now()
@@ -259,12 +279,14 @@ class ProgressMonitor(QWidget):
                 self.progress_bar.updateColorByProgress(current, total)
                 self.progress_bar.show()
 
+                self.file_count_label.setText(f"Processed: {current}/{total}")
+
                 # Calculate time estimate
                 if self.start_time and current > 0:
                     elapsed_time = (datetime.now() - self.start_time).total_seconds()
-                    files_per_second = current / elapsed_time
-                    remaining_files = total - current
-                    
+                    files_per_second = current / elapsed_time if elapsed_time > 0 else 0
+                    remaining_files = max(total - current, 0)
+
                     if files_per_second > 0:
                         estimated_remaining = remaining_files / files_per_second
                         elapsed_formatted = self._format_time(elapsed_time)
@@ -273,9 +295,11 @@ class ProgressMonitor(QWidget):
                             f"Elapsed: {elapsed_formatted} | Remaining: {remaining_formatted}"
                         )
                         self.time_estimate_label.show()
-                        
+
                         # Update tooltip with detailed statistics
                         self._update_tooltip()
+                    else:
+                        self.time_estimate_label.hide()
 
         except Exception as e:
             logger.error(f"Error updating progress bar: {e}")
@@ -283,11 +307,14 @@ class ProgressMonitor(QWidget):
     def updateStatus(self, message: str):
         try:
             self.status_label.setText(message)
-            if message == "Starting analysis...":
-                self.start_time = datetime.now()
+            lowered = message.lower()
+
+            if any(keyword in lowered for keyword in ["starting", "running streaming analysis"]):
+                if not self.start_time:
+                    self.start_time = datetime.now()
                 self.progress_bar.reset()  # Reset to orange at start
                 self.progress_bar.show()
-            elif message in ["Analysis completed", "Analysis cancelled"]:
+            elif any(keyword in lowered for keyword in ["analysis completed", "analysis cancelled", "analysis stopped"]):
                 self.start_time = None
                 self.time_estimate_label.hide()
                 self.progress_bar.hide()
@@ -298,7 +325,10 @@ class ProgressMonitor(QWidget):
 
     def updateFileCount(self, count: int):
         try:
-            self.file_count_label.setText(f"Files: {count}")
+            if self.total_count > 0:
+                self.file_count_label.setText(f"Processed: {count}/{self.total_count}")
+            else:
+                self.file_count_label.setText(f"Processed: {count} (estimating total)")
         except Exception as e:
             logger.error(f"Error updating file count: {e}")
 
@@ -307,3 +337,4 @@ class ProgressMonitor(QWidget):
         self.time_estimate_label.hide()
         self.start_time = None
         self.progress_bar.reset()  # Reset to orange when hidden
+        self.file_count_label.setText("Processed: 0")

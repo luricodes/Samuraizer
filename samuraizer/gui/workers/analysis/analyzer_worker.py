@@ -1,6 +1,9 @@
 import logging
-from typing import Dict, Any, Optional, Generator
+import threading
+import time
+from typing import Dict, Any, Optional, Generator, List
 from pathlib import Path
+import fnmatch
 from PyQt6.QtCore import QObject, pyqtSignal, QSettings
 from samuraizer.backend.services.event_service.events import shutdown_event
 from samuraizer.backend.analysis.traversal.traversal_processor import get_directory_structure
@@ -33,6 +36,8 @@ class AnalyzerWorker(QObject):
         self._stop_requested = False
         self.processed_files = 0
         self.total_files = 0
+        self._estimator_thread: Optional[threading.Thread] = None
+        self._estimator_stop = threading.Event()
 
     def _map_format_name(self, format_name: str) -> str:
         """Map GUI format names to OutputFactory format keys"""
@@ -45,30 +50,109 @@ class AnalyzerWorker(QObject):
             for path in root_dir.rglob('*'):
                 if self._stop_requested:
                     return 0
-                    
+
                 if path.is_file():
                     # Check if file should be excluded
                     relative_path = path.relative_to(root_dir)
                     parent_parts = relative_path.parent.parts
-                    
+
                     # Skip if in excluded folders
                     if any(part in excluded_folders for part in parent_parts):
                         continue
-                        
+
                     # Skip if matches excluded files
                     if path.name in excluded_files:
                         continue
-                        
+
                     total += 1
             return total
         except Exception as e:
             logger.error(f"Error counting files: {e}")
             return 0
 
+    def _start_file_estimator(
+        self,
+        root_dir: Path,
+        excluded_folders: set,
+        excluded_files: set,
+        exclude_patterns: List[str],
+    ) -> None:
+        """Start a background thread that estimates the total number of files."""
+
+        if self._estimator_thread and self._estimator_thread.is_alive():
+            return
+
+        self._estimator_stop.clear()
+
+        def estimator():
+            estimated_total = 0
+            try:
+                for path in root_dir.rglob('*'):
+                    if self._stop_requested or self._estimator_stop.is_set():
+                        break
+
+                    if not path.is_file():
+                        continue
+
+                    try:
+                        relative_path = path.relative_to(root_dir)
+                    except ValueError:
+                        # If relative path can't be determined, skip estimation for this entry
+                        continue
+
+                    parent_parts = relative_path.parent.parts
+
+                    if any(part in excluded_folders for part in parent_parts):
+                        continue
+
+                    if path.name in excluded_files:
+                        continue
+
+                    relative_str = str(relative_path)
+                    if any(fnmatch.fnmatch(relative_str, pattern) for pattern in exclude_patterns):
+                        continue
+
+                    estimated_total += 1
+
+                    if estimated_total % 25 == 0:
+                        self._update_total_estimate(estimated_total)
+
+                self._update_total_estimate(estimated_total)
+            except Exception as exc:
+                logger.debug(f"File estimation failed: {exc}", exc_info=True)
+
+        self._estimator_thread = threading.Thread(
+            target=estimator,
+            name="AnalyzerFileEstimator",
+            daemon=True,
+        )
+        self._estimator_thread.start()
+
+    def _stop_file_estimator(self, wait: bool = False) -> None:
+        """Stop the background estimator thread."""
+
+        self._estimator_stop.set()
+
+        if self._estimator_thread and self._estimator_thread.is_alive():
+            if wait:
+                self._estimator_thread.join(timeout=5)
+        self._estimator_thread = None
+
+    def _update_total_estimate(self, total: int) -> None:
+        """Update the estimated total file count and emit progress."""
+
+        if total <= self.total_files:
+            return
+
+        self.total_files = total
+        self.progress.emit(self.processed_files, self.total_files)
+
     def _update_progress(self, current: int, total: int):
         """Update progress and emit signals."""
+        adjusted_total = max(total, current, self.total_files)
         self.processed_files = current
-        self.progress.emit(current, total)
+        self.total_files = adjusted_total
+        self.progress.emit(current, adjusted_total)
         self.fileProcessed.emit(current)
 
     def run(self):
@@ -118,31 +202,30 @@ class AnalyzerWorker(QObject):
                 'hash_algorithm': hash_algorithm,  # Use the determined hash_algorithm
             }
 
-            # Count total files before starting analysis
-            self.status.emit("Counting files...")
-            self.total_files = self._count_files(
+            # Initialize progress tracking and start background estimation
+            self.processed_files = 0
+            self.total_files = 0
+            self._update_progress(0, 0)
+
+            self._start_file_estimator(
                 root_dir,
                 analysis_params['excluded_folders'],
-                analysis_params['excluded_files']
+                analysis_params['excluded_files'],
+                analysis_params.get('exclude_patterns') or [],
             )
-            if self._stop_requested:
-                self.status.emit("Analysis cancelled during file counting")
-                return
 
-            # Initialize progress tracking
-            self.processed_files = 0
-            self._update_progress(0, self.total_files)
-            self.status.emit("Starting analysis...")
-            
             results = None
             try:
                 output_format = self._map_format_name(output_config.get('format', 'json'))
                 is_streaming_format = output_format in ['jsonl']
-                
-                if output_config.get('streaming', False) or is_streaming_format:
+
+                use_streaming = output_config.get('streaming', True) or is_streaming_format
+
+                if use_streaming:
+                    self.status.emit("Starting streaming analysis...")
                     # Get both the generator for output and collected results for GUI
                     generator, results = self._run_streaming_analysis(analysis_params)
-                    
+
                     # Process output if needed
                     output_path = output_config.get('output_path')
                     if not self._stop_requested and output_path:
@@ -151,8 +234,9 @@ class AnalyzerWorker(QObject):
                             generator = (entry for entry in generator if "summary" not in entry)
                         self._write_output(generator, output_config)
                 else:
+                    self.status.emit("Starting analysis...")
                     results = self._run_standard_analysis(analysis_params)
-                    
+
                     # Process output if needed
                     output_path = output_config.get('output_path')
                     if not self._stop_requested and output_path:
@@ -192,12 +276,14 @@ class AnalyzerWorker(QObject):
                 
                 # Emit results even if stopped
                 self.finished.emit(results)
-                
+
             except Exception as e:
                 logger.error(f"Analysis error: {e}", exc_info=True)
                 self.error.emit(f"Analysis failed: {str(e)}")
                 return
-                
+            finally:
+                self._stop_file_estimator()
+
         except Exception as e:
             logger.error(f"Worker initialization error: {e}", exc_info=True)
             self.error.emit(f"Failed to initialize analysis: {str(e)}")
@@ -241,7 +327,8 @@ class AnalyzerWorker(QObject):
         try:
             # Create a progress callback
             def progress_callback(current: int):
-                self._update_progress(current, self.total_files)
+                estimated_total = max(self.total_files, current)
+                self._update_progress(current, estimated_total)
             
             # Add progress callback to params
             params['progress_callback'] = progress_callback
@@ -250,11 +337,19 @@ class AnalyzerWorker(QObject):
             
             # Ensure final progress is updated
             if not self._stop_requested:
-                self._update_progress(summary.get('included_files', 0), self.total_files)
+                final_count = summary.get('included_files', 0)
+                estimated_total = max(self.total_files, final_count)
+                self._update_progress(final_count, estimated_total)
             
             return {
                 "structure": structure,
-                "summary": summary
+                "summary": {
+                    **summary,
+                    "estimated_total_files": max(
+                        self.total_files,
+                        summary.get('total_files', summary.get('included_files', 0))
+                    )
+                }
             }
             
         except Exception as e:
@@ -264,21 +359,23 @@ class AnalyzerWorker(QObject):
     def _run_streaming_analysis(self, params: Dict[str, Any]) -> tuple[Generator[Dict[str, Any], None, None], Dict[str, Any]]:
         """Run analysis in streaming mode"""
         self.status.emit("Running streaming analysis...")
-        
+
+        root_dir: Optional[Path] = params.get('root_dir')
         file_count = 0
         structure = {}
         summary = {}
         failed_files = []
         included_files = 0
         excluded_files = 0
-        
+        last_status_update = 0.0
+
         try:
             # Create base generator
             base_generator = get_directory_structure_stream(**params)
             
             # Create a new generator that collects results while yielding
             def collecting_generator():
-                nonlocal file_count, structure, summary, failed_files, included_files, excluded_files
+                nonlocal file_count, structure, summary, failed_files, included_files, excluded_files, last_status_update
                 
                 for entry in base_generator:
                     if self._stop_requested:
@@ -302,7 +399,16 @@ class AnalyzerWorker(QObject):
                         else:
                             included_files += 1
                             # Update progress with actual count and total
-                            self._update_progress(included_files, self.total_files)
+                            estimated_total = max(self.total_files, included_files)
+                            self._update_progress(included_files, estimated_total)
+
+                            now = time.monotonic()
+                            if now - last_status_update >= 0.5:
+                                display_name = filename or (parent if parent else (root_dir.name if isinstance(root_dir, Path) else ""))
+                                self.status.emit(
+                                    f"Processed {included_files} files (latest: {display_name})"
+                                )
+                                last_status_update = now
                         
                         # Build structure
                         current = structure
@@ -326,6 +432,7 @@ class AnalyzerWorker(QObject):
                     "failed_files": failed_files,
                     "stopped_early": self._stop_requested,
                     "processed_files": included_files,
+                    "estimated_total_files": max(self.total_files, included_files + excluded_files),
                 })
             
             # Create the generator and results dictionary
@@ -408,3 +515,4 @@ class AnalyzerWorker(QObject):
         """Stop the analysis"""
         self._stop_requested = True
         shutdown_event.set()
+        self._stop_file_estimator()
