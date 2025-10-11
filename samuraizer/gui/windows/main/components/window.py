@@ -1,6 +1,5 @@
 from pathlib import Path
 import logging
-from typing import Dict, Any
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox
 from PyQt6.QtCore import QSize, QSettings
 from samuraizer.backend.cache.connection_pool import (
@@ -13,6 +12,14 @@ from samuraizer.gui.windows.main.toolbar import MainToolBar
 from samuraizer.gui.windows.main.status import MainStatusBar
 from samuraizer.gui.windows.main.panels import LeftPanel, RightPanel
 from samuraizer.gui.windows.main.components.analysis import AnalysisManager
+from samuraizer.gui.windows.main.components.analysis_dependencies import (
+    QMessagePresenter,
+    UIAnalysisConfigCollector,
+    UIAnalysisDisplay,
+    UIRepositorySelector,
+    UIRepositoryValidator,
+    UIStatusReporter,
+)
 from samuraizer.gui.windows.main.components.ui_state import UIStateManager, AnalysisState
 from samuraizer.gui.windows.main.components.dialog_manager import DialogManager
 from samuraizer.config.config_manager import ConfigurationManager
@@ -36,7 +43,24 @@ class MainWindow(BaseWindow):
         # Initialize managers in the correct order
         # UIStateManager must be initialized first as others depend on it
         self.ui_state_manager = UIStateManager(self, self.left_panel, self.right_panel)
-        self.analysis_manager = AnalysisManager(self, self.left_panel, self.right_panel)
+
+        repository_widget = self.left_panel.analysis_options.repository_widget
+        repository_selector = UIRepositorySelector(repository_widget)
+        repository_validator = UIRepositoryValidator(repository_widget)
+        status_reporter = UIStatusReporter(self.status_bar)
+        analysis_display = UIAnalysisDisplay(self.right_panel)
+        message_presenter = QMessagePresenter(self)
+        config_collector = UIAnalysisConfigCollector(self.left_panel, repository_validator)
+
+        self.analysis_manager = AnalysisManager(
+            repository_selector=repository_selector,
+            repository_validator=repository_validator,
+            config_collector=config_collector,
+            analysis_display=analysis_display,
+            state_controller=self.ui_state_manager,
+            status_reporter=status_reporter,
+            message_presenter=message_presenter,
+        )
         self.dialog_manager = DialogManager(self)
         
         # Set initial UI state
