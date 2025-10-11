@@ -75,6 +75,7 @@ class ResultsViewWidget(QWidget):
         self.current_progress = 0
         self.total_files = 0
         self.gui_log_handler = None
+        self._worker_connections = []
 
         # Initialize components
         self.progress_monitor = ProgressMonitor(self)
@@ -228,21 +229,28 @@ class ResultsViewWidget(QWidget):
         """Start a new analysis with the given worker and thread."""
         try:
             self.cleanup()  # Clean up any previous analysis
-            
+
             self.analyzer_worker = worker
             self.analyzer_thread = thread
-            
+            self._worker_connections = []
+
             # Connect worker signals
-            self.analyzer_worker.progress.connect(self.updateProgress)
-            self.analyzer_worker.status.connect(self.updateStatus)
-            self.analyzer_worker.error.connect(self.handleError)
-            self.analyzer_worker.fileProcessed.connect(self.progress_monitor.updateFileCount)
-            self.analyzer_worker.finished.connect(self.analysisFinished)
-            
+            connections = [
+                (self.analyzer_worker.progress, self.updateProgress),
+                (self.analyzer_worker.status, self.updateStatus),
+                (self.analyzer_worker.error, self.handleError),
+                (self.analyzer_worker.fileProcessed, self.progress_monitor.updateFileCount),
+                (self.analyzer_worker.finished, self.analysisFinished),
+            ]
+
+            for signal, slot in connections:
+                signal.connect(slot)
+                self._worker_connections.append((signal, slot))
+
             # Show progress bar and update status
             self.progress_monitor.progress_bar.show()
             self.progress_monitor.updateStatus("Analysis started...")
-            
+
         except Exception as e:
             logger.error(f"Error starting analysis: {e}", exc_info=True)
             self.handleError(f"Failed to start analysis: {str(e)}")
@@ -281,7 +289,12 @@ class ResultsViewWidget(QWidget):
             if worker is not None:
                 try:
                     worker.stop()
-                    worker.disconnect()  # Disconnect all signals
+                    for signal, slot in self._worker_connections:
+                        try:
+                            signal.disconnect(slot)
+                        except (RuntimeError, TypeError):
+                            # Signal might already be disconnected/destroyed
+                            pass
                 except RuntimeError:
                     # Worker might already be deleted
                     pass
@@ -290,6 +303,8 @@ class ResultsViewWidget(QWidget):
                         worker.deleteLater()
                     except RuntimeError:
                         pass
+
+            self._worker_connections.clear()
 
             # Then clean up thread if it exists
             if thread is not None:
