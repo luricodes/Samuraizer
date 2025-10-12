@@ -37,9 +37,10 @@ def get_directory_structure(
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
     max_pending_tasks: Optional[int] = None,
     chunk_callback: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
+    materialize: bool = True,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
-    dir_structure: Dict[str, Any] = {}
+    dir_structure: Dict[str, Any] = {} if materialize else {}
 
     generator = generate_directory_chunks(
         root_dir=root_dir,
@@ -68,7 +69,8 @@ def get_directory_structure(
                     chunk_callback(entries)
                 except Exception:
                     logging.exception("Chunk callback failed; continuing without interruption")
-            _apply_entries(dir_structure, entries)
+            if materialize:
+                _apply_entries(dir_structure, entries)
         elif "summary" in payload:
             summary = payload["summary"]
 
