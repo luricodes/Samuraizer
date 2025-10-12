@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Iterator, Optional, Set, Tuple, List
 import logging
 from colorama import Fore, Style
 
