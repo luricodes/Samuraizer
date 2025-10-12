@@ -39,7 +39,64 @@ def get_directory_structure(
     chunk_callback: Optional[Callable[[List[Dict[str, Any]]], None]] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
-    dir_structure: Dict[str, Any] = {}
+    dir_structure: Dict[str, Any] = {} if materialize else {}
+
+    generator = generate_directory_chunks(
+        root_dir=root_dir,
+        max_file_size=max_file_size,
+        include_binary=include_binary,
+        excluded_folders=excluded_folders,
+        excluded_files=excluded_files,
+        follow_symlinks=follow_symlinks,
+        image_extensions=image_extensions,
+        exclude_patterns=exclude_patterns,
+        threads=threads,
+        encoding=encoding or 'utf-8',
+        hash_algorithm=hash_algorithm,
+        progress_callback=progress_callback,
+        cancellation_token=cancellation_token,
+        chunk_size=chunk_size,
+        max_pending_tasks=max_pending_tasks,
+    )
+
+    summary: Dict[str, Any] = {}
+    for payload in generator:
+        if "entries" in payload:
+            entries = payload["entries"]
+            if chunk_callback:
+                try:
+                    chunk_callback(entries)
+                except Exception:
+                    logging.exception("Chunk callback failed; continuing without interruption")
+            if materialize:
+                _apply_entries(dir_structure, entries)
+        elif "summary" in payload:
+            summary = payload["summary"]
+
+    return dir_structure, summary
+
+
+def generate_directory_chunks(
+    *,
+    root_dir: Path,
+    max_file_size: int,
+    include_binary: bool,
+    excluded_folders: Set[str],
+    excluded_files: Set[str],
+    follow_symlinks: bool,
+    image_extensions: Set[str],
+    exclude_patterns: List[str],
+    threads: int,
+    encoding: str,
+    hash_algorithm: Optional[str],
+    progress_callback: Optional[Callable[[int], None]],
+    cancellation_token: Optional[CancellationToken],
+    chunk_size: int,
+    max_pending_tasks: Optional[int],
+) -> Iterator[Dict[str, Any]]:
+    chunk_size = max(1, chunk_size)
+    max_workers = max(1, threads)
+    pending_limit = max_pending_tasks or max(max_workers * _DEFAULT_PENDING_MULTIPLIER, chunk_size)
 
     generator = generate_directory_chunks(
         root_dir=root_dir,
