@@ -1,8 +1,9 @@
 import base64
 import logging
 import os
+from codecs import getincrementaldecoder
 from pathlib import Path
-from typing import Any, Dict, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -14,6 +15,11 @@ from ...utils.file_utils.mime_detection import is_binary
 from ...config.timezone_config import TimezoneConfigManager
 
 import charset_normalizer
+
+_STREAM_READ_CHUNK_SIZE = 256 * 1024  # 256 KiB keeps memory usage low while remaining efficient
+_MAX_BINARY_CONTENT_BYTES = 3 * 1024 * 1024  # 3 MiB preview for binary files
+_MAX_TEXT_CONTENT_BYTES = 5 * 1024 * 1024  # 5 MiB preview for text files
+_ENCODING_SAMPLE_BYTES = 512 * 1024  # up to 512 KiB of data for encoding detection
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +171,8 @@ def _process_file_content(file_path: Path, include_binary: bool, image_extension
         }
 
 def _read_binary_file(file_path: Path, max_file_size: int) -> Dict[str, Any]:
+    """Read binary file content without exhausting memory."""
+
     try:
         file_size = file_path.stat().st_size
         if file_size > max_file_size:
@@ -174,14 +182,32 @@ def _read_binary_file(file_path: Path, max_file_size: int) -> Dict[str, Any]:
                 "reason": "binary_too_large",
                 "size": file_size
             }
-        
+
+        read_limit = min(max_file_size, _MAX_BINARY_CONTENT_BYTES)
+        preview_size = min(file_size, read_limit)
+
+        buffer = bytearray()
         with open(file_path, 'rb') as f:
-            content = base64.b64encode(f.read()).decode('utf-8')
-        logger.debug(f"Included binary file: {file_path}")
-        return {
+            while len(buffer) < preview_size:
+                chunk = f.read(min(_STREAM_READ_CHUNK_SIZE, preview_size - len(buffer)))
+                if not chunk:
+                    break
+                buffer.extend(chunk)
+
+        content = base64.b64encode(bytes(buffer)).decode('ascii')
+        result: Dict[str, Any] = {
             "type": "binary",
-            "content": content
+            "content": content,
+            "encoding": "base64",
+            "preview_bytes": len(buffer)
         }
+
+        if file_size > preview_size:
+            logger.debug(f"Binary file {file_path} truncated to {preview_size} bytes")
+            result["truncated"] = True
+
+        logger.debug(f"Included binary file: {file_path} ({len(buffer)} preview bytes)")
+        return result
     except Exception as e:
         logger.error(f"Error reading binary file {file_path}: {e}")
         return {
@@ -193,31 +219,53 @@ def _read_binary_file(file_path: Path, max_file_size: int) -> Dict[str, Any]:
 
 def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]) -> Dict[str, Any]:
     try:
-        with open(file_path, 'rb') as f:
-            raw_data = f.read(max_file_size)
+        read_limit = min(max_file_size, _MAX_TEXT_CONTENT_BYTES)
 
-        if encoding is None:
-            matches = charset_normalizer.from_bytes(raw_data)
-            best_match = matches.best()
-            if best_match:
-                encoding_to_use = best_match.encoding
-                content = str(best_match)  # This is the correct way to get normalized content
-                logger.debug(f"Detected encoding '{encoding_to_use}' for file {file_path}")
+        with open(file_path, 'rb') as f:
+            sample = f.read(min(read_limit, _ENCODING_SAMPLE_BYTES))
+
+            if encoding is None:
+                matches = charset_normalizer.from_bytes(sample)
+                best_match = matches.best()
+                if best_match and best_match.encoding:
+                    encoding_to_use = best_match.encoding
+                    logger.debug(f"Detected encoding '{encoding_to_use}' for file {file_path}")
+                else:
+                    encoding_to_use = 'utf-8'
+                    logger.warning(f"Could not detect encoding for {file_path}. Falling back to 'utf-8'.")
             else:
-                encoding_to_use = 'utf-8'
-                content = raw_data.decode(encoding_to_use, errors='replace')
-                logger.warning(f"Could not detect encoding for {file_path}. Falling back to 'utf-8'.")
-        else:
-            encoding_to_use = encoding
-            content = raw_data.decode(encoding_to_use, errors='replace')
-            logger.debug(f"Using provided encoding '{encoding}' for file {file_path}")
+                encoding_to_use = encoding
+                logger.debug(f"Using provided encoding '{encoding}' for file {file_path}")
+
+            f.seek(0)
+            decoder = getincrementaldecoder(encoding_to_use)(errors='replace')
+            text_chunks: List[str] = []
+            bytes_read = 0
+
+            while bytes_read < read_limit:
+                chunk = f.read(min(_STREAM_READ_CHUNK_SIZE, read_limit - bytes_read))
+                if not chunk:
+                    break
+                bytes_read += len(chunk)
+                text_chunks.append(decoder.decode(chunk, final=False))
+
+            text_chunks.append(decoder.decode(b'', final=True))
+            content = ''.join(text_chunks)
 
         logger.debug(f"Read text file: {file_path} with encoding {encoding_to_use}")
-        return {
+        result: Dict[str, Any] = {
             "type": "text",
             "encoding": encoding_to_use,
-            "content": content
+            "content": content,
+            "preview_bytes": bytes_read
         }
+
+        file_size = file_path.stat().st_size
+        if file_size > read_limit:
+            logger.debug(f"Text file {file_path} truncated to {read_limit} bytes")
+            result["truncated"] = True
+
+        return result
     except Exception as e:
         logger.error(f"Error reading text file {file_path}: {e}")
         return {
