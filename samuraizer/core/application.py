@@ -26,6 +26,8 @@ from samuraizer.backend.services.logging.logging_service import setup_logging
 from samuraizer.backend.output.factory.output_factory import OutputFactory
 from ..backend.analysis.traversal.traversal_processor import get_directory_structure
 from ..backend.analysis.traversal.traversal_stream import get_directory_structure_stream
+from ..backend.analysis.traversal.progressive_store import ProgressiveResultStore
+from ..backend.output.progressive_writer import write_progressive_output
 from colorama import init as colorama_init
 
 DEFAULT_THREAD_MULTIPLIER = 2
@@ -244,27 +246,33 @@ def run() -> None:
                 logging.error("--stream is only available for the JSON, JSONL & MsgPack formats.")
                 sys.exit(1)
         else:
-            # Standardmode
-            structure, summary = get_directory_structure(
-                root_dir=root_directory,
-                max_file_size=max_file_size,
-                include_binary=include_binary,
-                excluded_folders=excluded_folders,
-                excluded_files=excluded_files,
-                follow_symlinks=follow_symlinks,
-                image_extensions=image_extensions,
-                exclude_patterns=exclude_patterns,
-                threads=threads,
-                encoding=encoding,
-                hash_algorithm=None if args.no_cache else 'xxhash',
-                cancellation_token=cancellation_source.token,
-            )
-            # Generate summary
-            output_data: Dict[str, Any] = {
-                "summary": summary,
-                "structure": structure
-            } if include_summary else structure
-            OutputFactory.get_output(output_format)(output_data, output_file)
+            # Standard mode now writes progress incrementally to keep memory bounded
+            with ProgressiveResultStore() as store:
+                _, summary = get_directory_structure(
+                    root_dir=root_directory,
+                    max_file_size=max_file_size,
+                    include_binary=include_binary,
+                    excluded_folders=excluded_folders,
+                    excluded_files=excluded_files,
+                    follow_symlinks=follow_symlinks,
+                    image_extensions=image_extensions,
+                    exclude_patterns=exclude_patterns,
+                    threads=threads,
+                    encoding=encoding,
+                    hash_algorithm=None if args.no_cache else 'xxhash',
+                    cancellation_token=cancellation_source.token,
+                    chunk_callback=store.add_entries,
+                    materialize=False,
+                )
+
+                write_progressive_output(
+                    fmt=output_format,
+                    entries=store.iter_entries(),
+                    summary=summary,
+                    output_file=output_file,
+                    config={},
+                    include_summary=include_summary,
+                )
 
         logging.info(
             f"The current status of the folder structure"
