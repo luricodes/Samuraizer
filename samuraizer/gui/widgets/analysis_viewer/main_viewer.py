@@ -225,6 +225,28 @@ class ResultsViewWidget(QWidget):
     def setConfiguration(self, config: Dict[str, Any]) -> None:
         self.result_processor.setConfiguration(config)
 
+    def _format_progress_status(self, prefix: str) -> str:
+        """Compose a consistent progress summary without risking division errors."""
+        current = max(int(self.current_progress or 0), 0)
+        total_raw = self.total_files if self.total_files is not None else 0
+        try:
+            total = max(int(total_raw), 0)
+        except (TypeError, ValueError):
+            total = 0
+
+        if total > 0:
+            ratio = min(max(current / total, 0.0), 1.0)
+            percentage = int(ratio * 100)
+            return (
+                f"{prefix} Processed {current} of {total} files "
+                f"({percentage}% complete)"
+            )
+
+        if current > 0:
+            return f"{prefix} Processed {current} files before stopping"
+
+        return f"{prefix} No files were processed"
+
     def startAnalysis(self, worker: AnalyzerWorker, thread: QThread) -> None:
         """Start a new analysis with the given worker and thread."""
         try:
@@ -261,11 +283,7 @@ class ResultsViewWidget(QWidget):
             if self.analyzer_worker:
                 self.analyzer_worker.stop()
                 # Show how many files were processed before stopping
-                status_msg = (
-                    f"Analysis stopped. Processed {self.current_progress} of "
-                    f"{self.total_files} files "
-                    f"({int((self.current_progress / self.total_files) * 100)}% complete)"
-                )
+                status_msg = self._format_progress_status("Analysis stopped.")
                 self.progress_monitor.updateStatus(status_msg)
                 self.progress_monitor.hideProgress()
         except Exception as e:
@@ -385,14 +403,10 @@ class ResultsViewWidget(QWidget):
                     self.details_panel.set_selection(results)
             
             self.progress_monitor.hideProgress()
-            
+
             # Check if analysis was stopped early
             if results.get("summary", {}).get("stopped_early", False):
-                status_msg = (
-                    f"Analysis stopped. Processed {self.current_progress} of "
-                    f"{self.total_files} files "
-                    f"({int((self.current_progress / self.total_files) * 100)}% complete)"
-                )
+                status_msg = self._format_progress_status("Analysis stopped.")
             else:
                 status_msg = "Analysis completed"
             self.progress_monitor.updateStatus(status_msg)

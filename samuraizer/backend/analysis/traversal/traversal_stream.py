@@ -6,7 +6,7 @@ import logging
 
 from .traversal_core import traverse_and_collect
 from ..file_processor import process_file
-from ...services.event_service.events import shutdown_event
+from ...services.event_service.cancellation import CancellationToken
 
 def get_directory_structure_stream(
     root_dir: Path,
@@ -20,13 +20,15 @@ def get_directory_structure_stream(
     threads: int,
     encoding: str = 'utf-8',
     hash_algorithm: Optional[str] = "xxhash",
+    cancellation_token: Optional[CancellationToken] = None,
 ) -> Generator[Dict[str, Any], None, None]:
     files_to_process, included_files, excluded_files_count = traverse_and_collect(
         root_dir,
         excluded_folders,
         excluded_files,
         exclude_patterns,
-        follow_symlinks
+        follow_symlinks,
+        cancellation_token=cancellation_token,
     )
     total_files: int = included_files + excluded_files_count
     excluded_percentage: float = (excluded_files_count / total_files * 100) if total_files else 0.0
@@ -47,7 +49,7 @@ def get_directory_structure_stream(
     with ThreadPoolExecutor(max_workers=threads) as executor:
         future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
         for file_path in files_to_process:
-            if shutdown_event.is_set():
+            if cancellation_token and cancellation_token.is_cancellation_requested():
                 break
             future = executor.submit(
                 process_file,
@@ -62,7 +64,7 @@ def get_directory_structure_stream(
 
         try:
             for future in as_completed(future_to_file):
-                if shutdown_event.is_set():
+                if cancellation_token and cancellation_token.is_cancellation_requested():
                     break
                 file_path: Path = future_to_file[future]
                 try:
@@ -110,6 +112,9 @@ def get_directory_structure_stream(
 
     if hash_algorithm is not None:
         summary["hash_algorithm"] = hash_algorithm
+
+    if cancellation_token and cancellation_token.is_cancellation_requested():
+        summary["stopped_early"] = True
 
     yield {
         "summary": summary

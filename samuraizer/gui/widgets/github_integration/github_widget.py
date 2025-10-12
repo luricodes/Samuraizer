@@ -13,7 +13,6 @@ from PyQt6.QtCore import pyqtSignal
 
 from samuraizer.backend.services.logging.logging_service import setup_logging
 from samuraizer.backend.analysis.traversal.traversal_processor import get_directory_structure
-from samuraizer.backend.services.event_service.events import shutdown_event
 
 from .workers.git_clone_worker import GitCloneWorker
 from .widgets.status_widget import StatusWidget

@@ -9,7 +9,7 @@ import sys
 from typing import Any, Dict, Optional, Set, List
 from PyQt6.QtCore import QSettings
 
-from samuraizer.backend.services.event_service.events import shutdown_event
+from samuraizer.backend.services.event_service.cancellation import CancellationTokenSource
 from samuraizer.backend.cache.connection_pool import (
     initialize_connection_pool,
     get_connection_context,
@@ -30,10 +30,23 @@ from colorama import init as colorama_init
 
 DEFAULT_THREAD_MULTIPLIER = 2
 
+_cli_cancellation_source: Optional[CancellationTokenSource] = None
+
+
+def _set_cli_cancellation_source(source: Optional[CancellationTokenSource]) -> None:
+    global _cli_cancellation_source
+    _cli_cancellation_source = source
+
+
 def signal_handler(sig, frame):
-    if not shutdown_event.is_set():
+    source = _cli_cancellation_source
+    if source is None:
+        logging.warning("Programme interrupted but no cancellable operation is active.")
+        return
+
+    if not source.is_cancelled():
         logging.warning("Programme interrupted by user (CTRL+C).")
-        shutdown_event.set()
+        source.cancel()
     else:
         logging.warning("Second CTRL+C recognised. Immediate cancellation.")
         sys.exit(1)
@@ -119,6 +132,10 @@ def run() -> None:
     signal.signal(signal.SIGTERM, signal_handler)
 
     setup_logging(args.verbose, args.log_file)
+
+    # Prepare cancellation handling for this run
+    cancellation_source = CancellationTokenSource()
+    _set_cli_cancellation_source(cancellation_source)
 
     # Process command line arguments
     root_directory: Path = Path(args.root_directory).resolve()
@@ -219,6 +236,7 @@ def run() -> None:
                     threads=threads,
                     encoding=encoding,
                     hash_algorithm=None if args.no_cache else 'xxhash',
+                    cancellation_token=cancellation_source.token,
                 )
                 output_function = OutputFactory.get_output(output_format, streaming=stream_mode)
                 output_function(data_gen, output_file)
@@ -239,6 +257,7 @@ def run() -> None:
                 threads=threads,
                 encoding=encoding,
                 hash_algorithm=None if args.no_cache else 'xxhash',
+                cancellation_token=cancellation_source.token,
             )
             # Generate summary
             output_data: Dict[str, Any] = {
@@ -253,7 +272,7 @@ def run() -> None:
             f" have been saved in'{output_file}'"
         )
     except KeyboardInterrupt:
-        if shutdown_event.is_set():
+        if cancellation_source.is_cancelled():
             logging.warning("Forced programme abort.")
         else:
             logging.warning("Programme interrupted by user (CTRL+C).")
@@ -273,3 +292,5 @@ def run() -> None:
             config_manager.cleanup()  # Clean up config manager
         except Exception as e:
             logging.error(f"Error during cleanup: {e}")
+        finally:
+            _set_cli_cancellation_source(None)

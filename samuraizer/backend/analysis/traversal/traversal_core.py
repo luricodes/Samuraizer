@@ -1,17 +1,18 @@
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import List, Optional, Set, Tuple
 import logging
 from colorama import Fore, Style
 
 from ....backend.services.pattern_service import matches_patterns
-from ...services.event_service.events import shutdown_event
+from ...services.event_service.cancellation import CancellationToken
 
 def traverse_and_collect(
     root_dir: Path,
     excluded_folders: Set[str],
     excluded_files: Set[str],
     exclude_patterns: List[str],
-    follow_symlinks: bool
+    follow_symlinks: bool,
+    cancellation_token: Optional[CancellationToken] = None,
 ) -> Tuple[List[Path], int, int]:
     paths: List[Path] = []
     included = 0
@@ -21,8 +22,8 @@ def traverse_and_collect(
     stack = [root_dir]
 
     while stack:
-        if shutdown_event.is_set():
-            logging.debug("Traversal aborted due to shutdown event.")
+        if cancellation_token and cancellation_token.is_cancellation_requested():
+            logging.debug("Traversal aborted due to cancellation request.")
             break
 
         current_dir = stack.pop()
@@ -43,8 +44,8 @@ def traverse_and_collect(
 
         try:
             for entry in current_dir.iterdir():
-                if shutdown_event.is_set():
-                    logging.debug("Traversal aborted due to shutdown event.")
+                if cancellation_token and cancellation_token.is_cancellation_requested():
+                    logging.debug("Traversal aborted due to cancellation request.")
                     break
 
                 if entry.is_dir():

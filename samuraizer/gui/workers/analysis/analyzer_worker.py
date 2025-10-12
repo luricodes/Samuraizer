@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, Generator, List
 from pathlib import Path
 import fnmatch
 from PyQt6.QtCore import QObject, pyqtSignal, QSettings
-from samuraizer.backend.services.event_service.events import shutdown_event
+from samuraizer.backend.services.event_service.cancellation import CancellationTokenSource
 from samuraizer.backend.analysis.traversal.traversal_processor import get_directory_structure
 from samuraizer.backend.analysis.traversal.traversal_stream import get_directory_structure_stream
 from samuraizer.backend.output.factory.output_factory import OutputFactory
@@ -38,6 +38,7 @@ class AnalyzerWorker(QObject):
         self.total_files = 0
         self._estimator_thread: Optional[threading.Thread] = None
         self._estimator_stop = threading.Event()
+        self._cancellation = CancellationTokenSource()
 
     def _map_format_name(self, format_name: str) -> str:
         """Map GUI format names to OutputFactory format keys"""
@@ -158,8 +159,8 @@ class AnalyzerWorker(QObject):
     def run(self):
         """Main worker execution method."""
         try:
-            # Ensure shutdown_event is cleared at the start of a new analysis
-            shutdown_event.clear()
+            # Ensure per-run cancellation is reset
+            self._cancellation.reset()
             self._stop_requested = False
             
             self.status.emit("Initializing analysis...")
@@ -200,6 +201,7 @@ class AnalyzerWorker(QObject):
                 'threads': repo_config.get('thread_count', 4),
                 'encoding': repo_config.get('encoding'),
                 'hash_algorithm': hash_algorithm,  # Use the determined hash_algorithm
+                'cancellation_token': self._cancellation.token,
             }
 
             # Initialize progress tracking and start background estimation
@@ -287,9 +289,6 @@ class AnalyzerWorker(QObject):
         except Exception as e:
             logger.error(f"Worker initialization error: {e}", exc_info=True)
             self.error.emit(f"Failed to initialize analysis: {str(e)}")
-        finally:
-            # Clean up resources
-            shutdown_event.clear()
 
     def _validate_config(self) -> bool:
         """Validate the configuration."""
@@ -332,6 +331,7 @@ class AnalyzerWorker(QObject):
             
             # Add progress callback to params
             params['progress_callback'] = progress_callback
+            params['cancellation_token'] = self._cancellation.token
             
             structure, summary = get_directory_structure(**params)
             
@@ -371,6 +371,7 @@ class AnalyzerWorker(QObject):
 
         try:
             # Create base generator
+            params['cancellation_token'] = self._cancellation.token
             base_generator = get_directory_structure_stream(**params)
             
             # Create a new generator that collects results while yielding
@@ -514,5 +515,5 @@ class AnalyzerWorker(QObject):
     def stop(self):
         """Stop the analysis"""
         self._stop_requested = True
-        shutdown_event.set()
+        self._cancellation.cancel()
         self._stop_file_estimator()

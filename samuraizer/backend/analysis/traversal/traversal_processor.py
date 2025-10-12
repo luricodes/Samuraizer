@@ -8,7 +8,7 @@ import io
 
 from .traversal_core import traverse_and_collect
 from ..file_processor import process_file
-from ...services.event_service.events import shutdown_event
+from ...services.event_service.cancellation import CancellationToken
 
 def get_directory_structure(
     root_dir: Path,
@@ -23,6 +23,7 @@ def get_directory_structure(
     encoding: str = 'utf-8',
     hash_algorithm: Optional[str] = "xxhash",
     progress_callback: Optional[Callable[[int], None]] = None,
+    cancellation_token: Optional[CancellationToken] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     dir_structure: Dict[str, Any] = {}
@@ -32,7 +33,8 @@ def get_directory_structure(
         excluded_folders,
         excluded_files,
         exclude_patterns,
-        follow_symlinks
+        follow_symlinks,
+        cancellation_token=cancellation_token,
     )
     total_files: int = included_files + excluded_files_count
     excluded_percentage: float = (excluded_files_count / total_files * 100) if total_files else 0.0
@@ -59,7 +61,7 @@ def get_directory_structure(
         future_to_file: Dict[Future[Tuple[str, Any]], Path] = {}
         try:
             for file_path in files_to_process:
-                if shutdown_event.is_set():
+                if cancellation_token and cancellation_token.is_cancellation_requested():
                     # Cancel all pending futures when stop is requested
                     for future in future_to_file.keys():
                         future.cancel()
@@ -91,7 +93,7 @@ def get_directory_structure(
 
         try:
             for future in as_completed(future_to_file):
-                if shutdown_event.is_set():
+                if cancellation_token and cancellation_token.is_cancellation_requested():
                     # Cancel remaining futures when stop is requested
                     for remaining_future in future_to_file.keys():
                         if not remaining_future.done():
@@ -153,7 +155,7 @@ def get_directory_structure(
     pbar.close()
 
     # If analysis was stopped, adjust the summary
-    if shutdown_event.is_set():
+    if cancellation_token and cancellation_token.is_cancellation_requested():
         # Count completed futures that weren't cancelled
         completed_files = sum(1 for future in future_to_file.keys() if future.done() and not future.cancelled())
         logging.info(f"Analysis was stopped. {completed_files} files were processed.")
@@ -165,7 +167,7 @@ def get_directory_structure(
         "included_files": included_files,
         "excluded_percentage": excluded_percentage,
         "failed_files": failed_files,
-        "stopped_early": shutdown_event.is_set()
+        "stopped_early": bool(cancellation_token and cancellation_token.is_cancellation_requested())
     }
 
     if hash_algorithm is not None:
@@ -177,7 +179,7 @@ def get_directory_structure(
     logging.info(f"  Excluded files: {excluded_files_count} ({excluded_percentage:.2f}%)")
     if len(failed_files) > 0:
         logging.info(f"  Failed files: {len(failed_files)}")
-    if shutdown_event.is_set():
+    if cancellation_token and cancellation_token.is_cancellation_requested():
         logging.info("  Analysis was stopped before completion")
     if hash_algorithm is not None:
         logging.info(f"  Hash algorithm used: {hash_algorithm}")
