@@ -12,6 +12,8 @@ install_requires = [
     "pathspec>=0.11.2",
     "rich>=13.5.2",
     "click>=8.1.7",
+    "jsonschema>=4.19.0",
+    "tomli>=2.0.1",
     "xxhash>=3.5.0",
     "python-magic-bin>=0.4.14; platform_system == 'Windows'",
     "python-magic>=0.4.27; platform_system != 'Windows'",

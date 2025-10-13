@@ -1,5 +1,19 @@
-from .exclusion_config import ExclusionConfig
-from .config_manager import ConfigurationManager
+from .config_manager import (
+    ConfigurationManager,
+    UnifiedConfigManager,
+    ExclusionConfig,
+    ConfigError,
+    ConfigValidationError,
+    ConfigMigrationError,
+    ConfigIOError,
+)
 
-__all__ = ['ExclusionConfig', 'ConfigurationManager']
-
+__all__ = [
+    "ConfigurationManager",
+    "UnifiedConfigManager",
+    "ExclusionConfig",
+    "ConfigError",
+    "ConfigValidationError",
+    "ConfigMigrationError",
+    "ConfigIOError",
+]

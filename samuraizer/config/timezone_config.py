@@ -1,110 +1,73 @@
 # samuraizer/config/timezone_config.py
 
-import json
+"""Timezone configuration backed by the unified configuration manager."""
+
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo, available_timezones
+
+from .config_manager import UnifiedConfigManager
 
 logger = logging.getLogger(__name__)
 
+
 class TimezoneConfigManager:
-    """Manages timezone configuration for the Samuraizer."""
-    
-    def __init__(self) -> None:
-        self.config_file = Path.home() / '.samuraizer' / 'timezone_config.json'
-        self.default_config = {
-            'use_utc': False,  # By default, use system timezone
-            'repository_timezone': None  # None means use system timezone
-        }
-        self._load_config()
+    """Access timezone settings stored in the unified configuration."""
 
-    def _load_config(self) -> None:
-        """Load timezone configuration from file or create with defaults."""
-        try:
-            if self.config_file.exists():
-                with open(self.config_file, 'r') as f:
-                    self.config = json.load(f)
-                # Validate loaded config
-                if not all(key in self.config for key in self.default_config):
-                    self.config = self.default_config.copy()
-            else:
-                self.config = self.default_config.copy()
-                self._save_config()
-        except Exception as e:
-            logger.error(f"Error loading timezone config: {e}")
-            self.config = self.default_config.copy()
+    def __init__(self, manager: Optional[UnifiedConfigManager] = None) -> None:
+        self._manager = manager or UnifiedConfigManager()
 
-    def _save_config(self) -> None:
-        """Save current timezone configuration to file."""
-        try:
-            self.config_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.config_file, 'w') as f:
-                json.dump(self.config, f, indent=4)
-        except Exception as e:
-            logger.error(f"Error saving timezone config: {e}")
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _get_timezone_section(self) -> Dict[str, Any]:
+        config = self._manager.get_active_profile_config()
+        return config.get("timezone", {})
+
+    # ------------------------------------------------------------------
+    # Retrieval helpers
+    # ------------------------------------------------------------------
 
     def get_system_timezone(self) -> timezone:
-        """
-        Get the system's local timezone.
-        
-        Returns:
-            The system's timezone
-        """
         local_dt = datetime.now()
-        return local_dt.astimezone().tzinfo
+        return local_dt.astimezone().tzinfo or timezone.utc
 
     def get_timezone(self) -> timezone:
-        """
-        Get the appropriate timezone based on configuration.
-        
-        Returns:
-            timezone: The configured timezone (UTC, repository timezone, or system timezone)
-        """
-        if self.config['use_utc']:
+        config = self._get_timezone_section()
+        if config.get("use_utc", False):
             return timezone.utc
-        
-        repo_tz = self.config['repository_timezone']
-        if repo_tz:
+
+        repository_tz = config.get("repository_timezone")
+        if repository_tz:
             try:
-                return ZoneInfo(repo_tz)
-            except Exception as e:
-                logger.error(f"Invalid repository timezone {repo_tz}: {e}")
+                return ZoneInfo(repository_tz)
+            except Exception as exc:  # pragma: no cover - depends on tz database
+                logger.error("Invalid repository timezone %s: %s", repository_tz, exc)
                 return self.get_system_timezone()
-        
-        # If no specific timezone is set and not using UTC, return system timezone
         return self.get_system_timezone()
 
+    def get_config(self) -> Dict[str, Any]:
+        return self._get_timezone_section()
+
+    # ------------------------------------------------------------------
+    # Mutation helpers
+    # ------------------------------------------------------------------
+
     def set_repository_timezone(self, tz_name: Optional[str]) -> None:
-        """
-        Set the repository timezone.
-        
-        Args:
-            tz_name: Timezone name (e.g., 'America/New_York') or None to use system timezone
-        """
         if tz_name is not None and tz_name not in available_timezones():
             raise ValueError(f"Invalid timezone name: {tz_name}")
-        
-        self.config['repository_timezone'] = tz_name
-        # When setting a specific timezone, ensure UTC is disabled
+        self._manager.set_value("timezone.repository_timezone", tz_name)
         if tz_name is not None:
-            self.config['use_utc'] = False
-        self._save_config()
+            self._manager.set_value("timezone.use_utc", False)
 
     def use_utc(self, use_utc: bool = True) -> None:
-        """
-        Set whether to use UTC for all timestamps.
-        
-        Args:
-            use_utc: If True, use UTC; if False, use repository timezone or system timezone
-        """
-        self.config['use_utc'] = use_utc
+        self._manager.set_value("timezone.use_utc", use_utc)
         if use_utc:
-            # Clear repository timezone when switching to UTC
-            self.config['repository_timezone'] = None
-        self._save_config()
+            self._manager.set_value("timezone.repository_timezone", None)
 
-    def get_config(self) -> Dict[str, Any]:
-        """Get current timezone configuration."""
-        return self.config.copy()
+
+__all__ = ["TimezoneConfigManager"]

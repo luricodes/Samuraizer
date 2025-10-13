@@ -1,22 +1,61 @@
 # samuraizer/config/types.py
 
-from typing import TypedDict, List, Union, Protocol, Optional
+from typing import List, Optional, TypedDict
 
-class TimezoneConfig(TypedDict):
-    use_utc: bool  # If True, always use UTC; if False, use repository_timezone if set, else system timezone
-    repository_timezone: Optional[str]  # Optional timezone name for the repository (e.g., "America/New_York")
+
+class ExclusionListConfig(TypedDict):
+    exclude: List[str]
+
+
+class ImageExtensionConfig(TypedDict):
+    include: List[str]
+
 
 class ExclusionsConfig(TypedDict):
-    folders: List[str]
-    files: List[str]
-    patterns: List[str]
+    folders: ExclusionListConfig
+    files: ExclusionListConfig
+    patterns: ExclusionListConfig
+    image_extensions: ImageExtensionConfig
 
-class ConfigurationData(TypedDict):
+
+class AnalysisConfig(TypedDict, total=False):
+    default_format: str
+    max_file_size_mb: int
+    threads: int
+    follow_symlinks: bool
+    include_binary: bool
+    encoding: str
+    hash_algorithm: str
+    cache_enabled: bool
+    include_summary: bool
+
+
+class CacheConfig(TypedDict, total=False):
+    path: str
+    size_limit_mb: int
+    cleanup_days: int
+
+
+class OutputConfig(TypedDict, total=False):
+    compression: bool
+    streaming: bool
+    pretty_print: bool
+
+
+class ThemeConfig(TypedDict, total=False):
+    name: str
+
+
+class TimezoneConfig(TypedDict, total=False):
+    use_utc: bool
+    repository_timezone: Optional[str]
+
+
+class ConfigurationData(TypedDict, total=False):
+    config_version: str
+    analysis: AnalysisConfig
+    cache: CacheConfig
     exclusions: ExclusionsConfig
-    image_extensions: List[str]
+    output: OutputConfig
+    theme: ThemeConfig
     timezone: TimezoneConfig
-
-class ConfigChangeNotifier(Protocol):
-    """Protocol for objects that can notify about configuration changes"""
-    def add_change_listener(self, callback: callable) -> None: ...
-    def remove_change_listener(self, callback: callable) -> None: ...

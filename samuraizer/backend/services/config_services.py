@@ -1,32 +1,54 @@
 # samuraizer/backend/services/config_services.py
 
-"""
-This module serves as a bridge between the old and new configuration system.
-It uses the new ConfigurationManager to provide configuration values.
-"""
+"""Central access to configuration defaults derived from the unified manager."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
 
 from samuraizer.config import ConfigurationManager
 
-# Initialize configuration manager
 config_manager = ConfigurationManager()
 
-# Database configuration
-CACHE_DB_FILE = '.repo_structure_cache.db'
 
-# Default maximum file size in megabytes
-DEFAULT_MAX_FILE_SIZE_MB = 50
+def _current_config() -> Dict[str, Any]:
+    return config_manager.get_active_profile_config()
 
-# Get configuration values from the manager
+
+def get_default_max_file_size_mb() -> int:
+    return int(_current_config().get("analysis", {}).get("max_file_size_mb", 50))
+
+
+def get_default_analysis_settings() -> Dict[str, Any]:
+    return _current_config().get("analysis", {})
+
+
+def get_default_cache_settings() -> Dict[str, Any]:
+    return _current_config().get("cache", {})
+
+
+def get_default_output_settings() -> Dict[str, Any]:
+    return _current_config().get("output", {})
+
+
+def get_default_timezone_settings() -> Dict[str, Any]:
+    return _current_config().get("timezone", {})
+
+
+CACHE_DB_FILE = ".repo_structure_cache.db"
 DEFAULT_EXCLUDED_FOLDERS = config_manager.exclusion_config.get_excluded_folders()
 DEFAULT_EXCLUDED_FILES = config_manager.exclusion_config.get_excluded_files()
 DEFAULT_IMAGE_EXTENSIONS = config_manager.exclusion_config.get_image_extensions()
 
-# Re-export all constants for backward compatibility
 __all__ = [
-    'CACHE_DB_FILE',
-    'DEFAULT_MAX_FILE_SIZE_MB',
-    'DEFAULT_EXCLUDED_FOLDERS',
-    'DEFAULT_EXCLUDED_FILES',
-    'DEFAULT_IMAGE_EXTENSIONS',
-    'config_manager'  # Export config_manager for direct access
+    "CACHE_DB_FILE",
+    "DEFAULT_EXCLUDED_FOLDERS",
+    "DEFAULT_EXCLUDED_FILES",
+    "DEFAULT_IMAGE_EXTENSIONS",
+    "config_manager",
+    "get_default_analysis_settings",
+    "get_default_cache_settings",
+    "get_default_output_settings",
+    "get_default_timezone_settings",
+    "get_default_max_file_size_mb",
 ]
