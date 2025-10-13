@@ -33,7 +33,14 @@ class TimezoneConfigManager:
 
     def _get_timezone_section(self) -> Dict[str, Any]:
         config = self._manager.get_active_profile_config()
-        return config.get("timezone", {})
+        section = config.get("timezone", {})
+        use_utc = bool(section.get("use_utc", False))
+        repository_tz = section.get("repository_timezone")
+        if isinstance(repository_tz, str):
+            repository_tz = repository_tz.strip() or None
+        else:
+            repository_tz = None
+        return {"use_utc": use_utc, "repository_timezone": repository_tz}
 
     def _is_timezone_available(self, tz_name: Optional[str]) -> bool:
         if not tz_name:
@@ -48,10 +55,17 @@ class TimezoneConfigManager:
             return False
 
     def _coerce_timezone(self, tz_name: Optional[str], *, log: bool = False) -> Optional[str]:
-        if tz_name and self._is_timezone_available(tz_name):
-            return tz_name
-        if tz_name and log:
-            logger.warning("Timezone '%s' is not available on this system.", tz_name)
+        if not tz_name:
+            return None
+        tz_clean = tz_name.strip()
+        if not tz_clean:
+            return None
+        if tz_clean.upper() == "UTC":
+            return "UTC"
+        if self._is_timezone_available(tz_clean):
+            return tz_clean
+        if log:
+            logger.warning("Timezone '%s' is not available on this system.", tz_clean)
         return None
 
     # ------------------------------------------------------------------
@@ -70,6 +84,8 @@ class TimezoneConfigManager:
         original_tz = config.get("repository_timezone")
         repository_tz = self._coerce_timezone(original_tz, log=True)
         if repository_tz:
+            if repository_tz.upper() == "UTC":
+                return timezone.utc
             try:
                 return ZoneInfo(repository_tz)
             except ZoneInfoNotFoundError:  # pragma: no cover - defensive
@@ -86,8 +102,13 @@ class TimezoneConfigManager:
 
     def get_config(self) -> Dict[str, Any]:
         section = self._get_timezone_section()
-        section["repository_timezone"] = self._coerce_timezone(section.get("repository_timezone"))
+        coerced = self._coerce_timezone(section.get("repository_timezone"))
+        section["repository_timezone"] = coerced
         return section
+
+    @property
+    def config(self) -> Dict[str, Any]:
+        return self.get_config()
 
     # ------------------------------------------------------------------
     # Mutation helpers

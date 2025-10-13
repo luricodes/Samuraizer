@@ -282,21 +282,22 @@ def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]
 def _add_metadata(file_info: Dict[str, Any], stat: os.stat_result) -> None:
     """Add metadata to file info with proper timezone handling."""
     try:
-        # Get timezone configuration
         tz_config = TimezoneConfigManager()
+        tz_state = tz_config.get_config()
         target_tz = tz_config.get_timezone()
+        use_utc = bool(tz_state.get("use_utc", False))
 
         # Convert timestamps to datetime objects with proper timezone
         if hasattr(stat, 'st_birthtime'):
             created_dt = datetime.fromtimestamp(stat.st_birthtime, tz=timezone.utc)
-            if not tz_config.config['use_utc']:
+            if not use_utc:
                 created_dt = created_dt.astimezone(target_tz)
             created_ts = created_dt.isoformat()
         else:
             created_ts = None
 
         modified_dt = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-        if not tz_config.config['use_utc']:
+        if not use_utc:
             modified_dt = modified_dt.astimezone(target_tz)
         modified_ts = modified_dt.isoformat()
 
