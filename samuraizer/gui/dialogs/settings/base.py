@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from typing import Optional
-import logging
+
+from PyQt6.QtCore import QSettings, QObject
 from PyQt6.QtWidgets import QGroupBox, QWidget
-from PyQt6.QtCore import QSettings
 
 from samuraizer.config.config_manager import ConfigurationManager
 
@@ -22,6 +23,7 @@ class BaseSettingsGroup(QGroupBox):
             self.config_manager.add_change_listener(self._handle_config_change)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Unable to register configuration listener: %s", exc)
+        self.destroyed.connect(self._on_destroyed)
         self.setup_ui()
 
     def setup_ui(self) -> None:
@@ -63,3 +65,9 @@ class BaseSettingsGroup(QGroupBox):
         if self._suspend_config_updates:
             return
         self.on_config_changed()
+
+    def _on_destroyed(self, obj: Optional[QObject] = None) -> None:
+        try:
+            self.config_manager.remove_change_listener(self._handle_config_change)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Unable to deregister configuration listener: %s", exc)

@@ -16,6 +16,7 @@ import logging
 import os
 import shutil
 import threading
+import weakref
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
@@ -40,6 +41,35 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 logger = logging.getLogger(__name__)
 
 WidgetType = TypeVar("WidgetType")
+
+
+class _Listener:
+    """Wrapper that stores callbacks via weak references when possible."""
+
+    __slots__ = ("_ref", "_strong")
+
+    def __init__(self, callback: Callable[[], None]) -> None:
+        try:
+            if hasattr(callback, "__self__") and hasattr(callback, "__func__"):
+                self._ref = weakref.WeakMethod(callback)  # type: ignore[arg-type]
+            else:
+                self._ref = weakref.ref(callback)
+            self._strong: Optional[Callable[[], None]] = None
+        except TypeError:
+            # Fallback for callables that do not support weak references.
+            self._ref = None
+            self._strong = callback
+
+    def get(self) -> Optional[Callable[[], None]]:
+        if self._ref is None:
+            return self._strong
+        return self._ref()
+
+    def matches(self, callback: Callable[[], None]) -> bool:
+        if self._ref is None:
+            return self._strong is callback
+        target = self._ref()
+        return target is callback
 
 # ---------------------------------------------------------------------------
 # Defaults & schema definitions
@@ -396,7 +426,7 @@ class UnifiedConfigManager:
         self._raw_config: Dict[str, Any] = deepcopy(DEFAULT_CONFIG)
         self._active_profile: str = "default"
         self._profile_cache: Dict[str, ProfileResolutionResult] = {}
-        self._change_listeners: List[Callable[[], None]] = []
+        self._change_listeners: List["_Listener"] = []
         self._load_or_create()
         self._initialized = True
 
@@ -655,19 +685,35 @@ class UnifiedConfigManager:
             self._notify_change()
 
     def add_change_listener(self, callback: Callable[[], None]) -> None:
-        if callback not in self._change_listeners:
-            self._change_listeners.append(callback)
+        if not any(listener.matches(callback) for listener in self._change_listeners):
+            self._change_listeners.append(_Listener(callback))
 
     def remove_change_listener(self, callback: Callable[[], None]) -> None:
-        if callback in self._change_listeners:
-            self._change_listeners.remove(callback)
+        self._change_listeners = [
+            listener for listener in self._change_listeners if not listener.matches(callback)
+        ]
 
     def _notify_change(self) -> None:
-        for callback in list(self._change_listeners):
+        stale: List[_Listener] = []
+        for listener in list(self._change_listeners):
+            callback = listener.get()
+            if callback is None:
+                stale.append(listener)
+                continue
             try:
                 callback()
+            except RuntimeError as exc:  # pragma: no cover - defensive
+                if "wrapped C/C++ object" in str(exc):
+                    logger.debug("Removing dead configuration listener: %s", exc)
+                    stale.append(listener)
+                else:
+                    logger.error("Error in configuration change listener: %s", exc)
             except Exception as exc:  # pragma: no cover - best effort
                 logger.error("Error in configuration change listener: %s", exc)
+        if stale:
+            for listener in stale:
+                if listener in self._change_listeners:
+                    self._change_listeners.remove(listener)
 
     # ------------------------------------------------------------------
     # Migration support
@@ -947,7 +993,7 @@ class ExclusionConfig:
     def __init__(self, manager: Optional[UnifiedConfigManager] = None) -> None:
         self._manager = manager or UnifiedConfigManager()
         self._lock = threading.RLock()
-        self._change_callbacks: List[Callable[[], None]] = []
+        self._change_callbacks: List[_Listener] = []
 
     @property
     def config_file(self) -> str:
@@ -1031,14 +1077,21 @@ class ExclusionConfig:
 
     def add_change_listener(self, callback: Callable[[], None]) -> None:
         with self._lock:
-            if callback not in self._change_callbacks:
-                self._change_callbacks.append(callback)
+            if not any(listener.matches(callback) for listener in self._change_callbacks):
+                self._change_callbacks.append(_Listener(callback))
                 self._manager.add_change_listener(callback)
 
     def remove_change_listener(self, callback: Callable[[], None]) -> None:
         with self._lock:
-            if callback in self._change_callbacks:
-                self._change_callbacks.remove(callback)
+            removed = False
+            retained: List[_Listener] = []
+            for listener in self._change_callbacks:
+                if listener.matches(callback):
+                    removed = True
+                else:
+                    retained.append(listener)
+            self._change_callbacks = retained
+            if removed:
                 self._manager.remove_change_listener(callback)
 
     def cleanup(self) -> None:
@@ -1046,11 +1099,26 @@ class ExclusionConfig:
             self._change_callbacks.clear()
 
     def _notify_change(self) -> None:
-        for callback in list(self._change_callbacks):
+        stale: List[_Listener] = []
+        for listener in list(self._change_callbacks):
+            callback = listener.get()
+            if callback is None:
+                stale.append(listener)
+                continue
             try:
                 callback()
+            except RuntimeError as exc:  # pragma: no cover - defensive
+                if "wrapped C/C++ object" in str(exc):
+                    logger.debug("Removing dead exclusion listener: %s", exc)
+                    stale.append(listener)
+                else:
+                    logger.error("Error notifying exclusion change listener: %s", exc)
             except Exception as exc:  # pragma: no cover - best effort
                 logger.error("Error notifying exclusion change listener: %s", exc)
+        if stale:
+            for listener in stale:
+                if listener in self._change_callbacks:
+                    self._change_callbacks.remove(listener)
 
 
 class ConfigurationManager(Generic[WidgetType]):
@@ -1072,7 +1140,7 @@ class ConfigurationManager(Generic[WidgetType]):
 
         self.unified = UnifiedConfigManager()
         self.exclusion_config = ExclusionConfig(self.unified)
-        self._change_callbacks: List[Callable[[], None]] = []
+        self._change_callbacks: List[_Listener] = []
         self._initialized = True
 
     # ------------------------------------------------------------------
@@ -1240,13 +1308,20 @@ class ConfigurationManager(Generic[WidgetType]):
     # ------------------------------------------------------------------
 
     def add_change_listener(self, callback: Callable[[], None]) -> None:
-        if callback not in self._change_callbacks:
-            self._change_callbacks.append(callback)
+        if not any(listener.matches(callback) for listener in self._change_callbacks):
+            self._change_callbacks.append(_Listener(callback))
             self.unified.add_change_listener(callback)
 
     def remove_change_listener(self, callback: Callable[[], None]) -> None:
-        if callback in self._change_callbacks:
-            self._change_callbacks.remove(callback)
+        removed = False
+        retained: List[_Listener] = []
+        for listener in self._change_callbacks:
+            if listener.matches(callback):
+                removed = True
+            else:
+                retained.append(listener)
+        self._change_callbacks = retained
+        if removed:
             self.unified.remove_change_listener(callback)
 
     def cleanup(self) -> None:
@@ -1257,11 +1332,26 @@ class ConfigurationManager(Generic[WidgetType]):
         self._initialized = False
 
     def _notify_change(self) -> None:
-        for callback in list(self._change_callbacks):
+        stale: List[_Listener] = []
+        for listener in list(self._change_callbacks):
+            callback = listener.get()
+            if callback is None:
+                stale.append(listener)
+                continue
             try:
                 callback()
+            except RuntimeError as exc:  # pragma: no cover - defensive
+                if "wrapped C/C++ object" in str(exc):
+                    logger.debug("Removing dead configuration listener: %s", exc)
+                    stale.append(listener)
+                else:
+                    logger.error("Error during configuration change notification: %s", exc)
             except Exception as exc:  # pragma: no cover - best effort
                 logger.error("Error during configuration change notification: %s", exc)
+        if stale:
+            for listener in stale:
+                if listener in self._change_callbacks:
+                    self._change_callbacks.remove(listener)
 
 
 __all__ = [
