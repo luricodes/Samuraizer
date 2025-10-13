@@ -35,6 +35,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - dependency must be inst
         "Install it with 'pip install jsonschema' inside your Samuraizer environment."
     ) from exc
 import yaml
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +453,8 @@ class UnifiedConfigManager:
             logger.info("Creating default configuration at %s", self._config_path)
             self._config_path.write_text(DEFAULT_CONFIG_TOML, encoding="utf-8")
             self._raw_config = deepcopy(DEFAULT_CONFIG)
+            if self._normalise_timezone(self._raw_config):
+                self._write_config()
             return
 
         try:
@@ -460,9 +463,22 @@ class UnifiedConfigManager:
             if not isinstance(loaded, dict):
                 raise ConfigValidationError("Configuration root must be a table")
             self._raw_config = _deep_merge(DEFAULT_CONFIG, loaded)
+            timezone_fixed = self._normalise_timezone(self._raw_config)
             self._validate(self._raw_config)
+            if timezone_fixed:
+                self._write_config()
         except FileNotFoundError:
             self._raw_config = deepcopy(DEFAULT_CONFIG)
+            self._normalise_timezone(self._raw_config)
+        except tomllib.TOMLDecodeError as exc:
+            logger.error("Configuration file %s is not valid TOML: %s", self._config_path, exc)
+            backup_path = self._backup_existing_config(suffix="corrupt")
+            if backup_path:
+                logger.error("Corrupt configuration backed up to %s", backup_path)
+            self._raw_config = deepcopy(DEFAULT_CONFIG)
+            self._normalise_timezone(self._raw_config)
+            self._write_config()
+            logger.info("Restored default configuration after TOML decode failure")
         except ValidationError as exc:
             raise ConfigValidationError(f"Invalid configuration: {exc.message}") from exc
         except Exception as exc:  # pragma: no cover - fatal configuration error
@@ -632,6 +648,7 @@ class UnifiedConfigManager:
     def reset_to_defaults(self) -> None:
         with self._lock:
             self._raw_config = deepcopy(DEFAULT_CONFIG)
+            self._normalise_timezone(self._raw_config)
             self._write_config()
             self._profile_cache.clear()
             self._active_profile = "default"
@@ -840,6 +857,7 @@ class UnifiedConfigManager:
             profile_data = deepcopy(data)
             profile_data["inherit"] = inherit
             profiles[name] = profile_data
+            self._normalise_timezone(self._raw_config)
             self._write_config()
             self._profile_cache.clear()
             self._notify_change()
@@ -887,6 +905,35 @@ class UnifiedConfigManager:
         with self._lock:
             extra = sorted(self._raw_config.get("profiles", {}).keys())
         return ["default", *extra]
+
+    def _normalise_timezone(self, data: Dict[str, Any]) -> bool:
+        corrected = False
+
+        def _coerce(container: Dict[str, Any]) -> None:
+            nonlocal corrected
+            timezone_cfg = container.get("timezone")
+            if not isinstance(timezone_cfg, dict):
+                return
+            tz_name = timezone_cfg.get("repository_timezone")
+            if not tz_name:
+                return
+            try:
+                ZoneInfo(tz_name)
+            except ZoneInfoNotFoundError:
+                logger.warning(
+                    "Repository timezone '%s' is not available on this system. Falling back to system timezone.",
+                    tz_name,
+                )
+                timezone_cfg["repository_timezone"] = None
+                corrected = True
+
+        _coerce(data)
+        profiles = data.get("profiles", {})
+        if isinstance(profiles, dict):
+            for profile in profiles.values():
+                if isinstance(profile, dict):
+                    _coerce(profile)
+        return corrected
 
 
 # ---------------------------------------------------------------------------

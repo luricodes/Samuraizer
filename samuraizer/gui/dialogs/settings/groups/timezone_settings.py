@@ -7,8 +7,6 @@ from PyQt6.QtWidgets import (
     QCheckBox, QLabel
 )
 from PyQt6.QtGui import QFont
-from zoneinfo import available_timezones
-
 from samuraizer.config.timezone_config import TimezoneConfigManager
 from ..base import BaseSettingsGroup
 
@@ -43,10 +41,12 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
         # Add system default as first option
         system_tz = self.timezone_config.get_system_timezone()
         self.timezone_combo.addItem(f"System Default ({system_tz})")
-        
-        # Add all available timezones
-        for tz in sorted(available_timezones()):
+
+        timezone_options = self.timezone_config.list_timezones()
+        for tz in timezone_options:
             self.timezone_combo.addItem(tz)
+        if len(timezone_options) == 0:
+            self.timezone_combo.addItem("UTC")
 
         self.timezone_combo.currentIndexChanged.connect(self._on_timezone_changed)
         layout.addWidget(self.timezone_combo)
@@ -67,7 +67,8 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
     def _on_utc_changed(self, state: int) -> None:
         """Handle UTC checkbox state changes."""
         is_checked = bool(state)
-        self.timezone_combo.setEnabled(not is_checked)
+        has_choices = self.timezone_combo.count() > 1
+        self.timezone_combo.setEnabled(not is_checked and has_choices)
         if is_checked:
             self.timezone_config.use_utc(True)
         else:
@@ -96,10 +97,11 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
                 "timestamp representation across different time zones."
             )
         else:
-            current_tz = self.timezone_config.get_timezone()
+            config = self.timezone_config.get_config()
+            current_tz = config.get("repository_timezone")
             if self.timezone_combo.currentIndex() == 0:
                 self.description_label.setText(
-                    f"Using system timezone: {current_tz}. "
+                    f"Using system timezone: {self.timezone_config.get_system_timezone()}. "
                     "Timestamps will be displayed in your local time."
                 )
             else:
@@ -119,14 +121,20 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
             # Set timezone combo
             current_tz = config['repository_timezone']
             if current_tz:
-                index = self.timezone_combo.findText(current_tz)
+                index = self.timezone_combo.findText(str(current_tz))
                 if index >= 0:
                     self.timezone_combo.setCurrentIndex(index)
+                else:
+                    logger.info(
+                        "Selected timezone '%s' is not currently available. Falling back to system timezone.",
+                        current_tz,
+                    )
+                    self.timezone_combo.setCurrentIndex(0)
             else:
                 self.timezone_combo.setCurrentIndex(0)  # System Default
-                
-            # Update timezone combo enabled state
-            self.timezone_combo.setEnabled(not config['use_utc'])
+
+            has_choices = self.timezone_combo.count() > 1
+            self.timezone_combo.setEnabled(not config['use_utc'] and has_choices)
             
             # Update description
             self._update_description()
@@ -159,7 +167,7 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
                 current_index = self.timezone_combo.currentIndex()
                 if current_index > 0:  # Not System Default
                     tz_text = self.timezone_combo.currentText()
-                    if tz_text not in available_timezones():
+                    if tz_text not in self.timezone_config.list_timezones():
                         logger.error(f"Invalid timezone selected: {tz_text}")
                         return False
             return True

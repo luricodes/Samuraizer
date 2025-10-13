@@ -1,9 +1,9 @@
 import argparse
 import logging
 from typing import Optional
-from zoneinfo import available_timezones
 
 from samuraizer.backend.services.logging.logging_service import setup_logging
+from samuraizer.config.timezone_config import TimezoneConfigManager
 
 setup_logging(verbose=False)
 logger = logging.getLogger(__name__)
@@ -58,6 +58,9 @@ def parse_arguments(argv: Optional[list[str]] = None):
     )
 
     # Timezone
+    timezone_config = TimezoneConfigManager()
+    timezone_choices = timezone_config.list_timezones()
+
     parser.add_argument(
         "--use-utc",
         action="store_true",
@@ -67,7 +70,7 @@ def parse_arguments(argv: Optional[list[str]] = None):
     parser.add_argument(
         "--repository-timezone",
         type=str,
-        choices=list(available_timezones()),
+        choices=timezone_choices,
         default=None,
         help="Specify the repository's timezone (e.g., 'America/New_York').",
     )
