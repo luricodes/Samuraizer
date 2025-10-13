@@ -11,7 +11,11 @@ from samuraizer.backend.analysis.traversal.traversal_stream import get_directory
 from samuraizer.backend.output.factory.output_factory import OutputFactory
 from samuraizer.backend.cache.cache_cleaner import check_and_vacuum_if_needed
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
-from samuraizer.backend.cache.connection_pool import initialize_connection_pool
+from samuraizer.backend.cache.connection_pool import (
+    initialize_connection_pool,
+    is_cache_disabled,
+    set_cache_disabled,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -182,6 +186,8 @@ class AnalyzerWorker(QObject):
             # Check if cache is disabled in settings
             settings = QSettings()
             cache_disabled = settings.value("settings/disable_cache", False, type=bool)
+            set_cache_disabled(cache_disabled)
+            cache_disabled = is_cache_disabled()
             logger.debug(f"Cache disabled setting: {cache_disabled}")
             
             # Get hash algorithm from config, defaulting to xxhash if caching is enabled
@@ -274,7 +280,11 @@ class AnalyzerWorker(QObject):
                     
                     # Reinitialize connection pool with current thread count
                     thread_count = repo_config.get('thread_count', 4)
-                    initialize_connection_pool(str(db_path), thread_count)
+                    initialize_connection_pool(
+                        str(db_path),
+                        thread_count,
+                        force_disable_cache=is_cache_disabled(),
+                    )
                 
                 # Emit results even if stopped
                 self.finished.emit(results)

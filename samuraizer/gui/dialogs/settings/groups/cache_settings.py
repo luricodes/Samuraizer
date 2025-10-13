@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
+from samuraizer.backend.cache.connection_pool import set_cache_disabled
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
 from ..base import BaseSettingsGroup
 
@@ -270,6 +271,9 @@ class CacheSettingsGroup(BaseSettingsGroup):
             # Save cache state immediately
             self.settings.setValue("settings/disable_cache", cache_disabled)
             self.settings.sync()
+
+            # Propagate runtime cache state immediately
+            set_cache_disabled(cache_disabled)
             
             # Show/hide warning
             self.cache_warning.setVisible(cache_disabled)

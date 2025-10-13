@@ -6,12 +6,12 @@ import queue
 import sqlite3
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional, List, Tuple
-import time
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from PyQt6.QtCore import QSettings
+from .cache_state import CacheStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -50,39 +50,67 @@ class ConnectionPool:
                 if cls._instance is None:
                     cls._instance = super(ConnectionPool, cls).__new__(cls)
                     cls._instance._initialized = False
+                    cls._instance._state_listener_registered = False
+                    cls._instance._state_lock = threading.RLock()
         return cls._instance
 
     def __init__(self, db_path: str, thread_count: int, force_disable_cache: bool = False) -> None:
         pool_size = calculate_pool_size(thread_count)
-        
-        if self._initialized and self._current_settings and all(
-            self._current_settings.get(key) == value 
-            for key, value in {
-                'db_path': db_path,
-                'thread_count': thread_count,
-                'force_disable_cache': force_disable_cache,
-            }.items()
-        ):
-            return
-
-        settings = QSettings()
-        current_cache_disabled = settings.value("settings/disable_cache", False, bool)
-        
         new_settings = {
             'db_path': db_path,
             'thread_count': thread_count,
-            'force_disable_cache': force_disable_cache,
-            'gui_cache_disabled': current_cache_disabled
         }
-        
-        if self._initialized:
-            self._cleanup()
 
-        self._current_settings = new_settings
-        self.db_path = db_path
-        self.pool_size = pool_size
-        self._cache_disabled = force_disable_cache or current_cache_disabled
+        with self._state_lock:
+            if (
+                self._initialized
+                and self._current_settings
+                and all(self._current_settings.get(k) == v for k, v in new_settings.items())
+            ):
+                self._ensure_state_listener()
+                self._reinitialize_if_needed()
+                return
 
+            if self._initialized:
+                self._cleanup(force=True)
+
+            self._current_settings = new_settings
+            self.db_path = db_path
+            self.pool_size = pool_size
+
+            if force_disable_cache:
+                CacheStateManager.set_disabled(True)
+
+            self._cache_disabled = CacheStateManager.is_disabled()
+
+            self._reset_worker_state()
+
+            if self._cache_disabled:
+                logger.warning("Cache operations will be skipped. This may impact performance.")
+                self.pool = None
+                self._initialized = True
+                self._ensure_state_listener()
+                return
+
+            logger.debug("Cache is enabled. Initializing connection pool at: %s", self.db_path)
+            self._initialize_pool()
+            self._start_write_worker()
+            self._initialized = True
+            self._ensure_state_listener()
+            logger.debug(
+                "Cache initialization completed successfully with pool size: %s",
+                self.pool_size,
+            )
+
+    def _ensure_state_listener(self) -> None:
+        if not getattr(self, "_state_listener_registered", False):
+            CacheStateManager.register_listener(
+                self._handle_external_state_change,
+                notify_immediately=False,
+            )
+            self._state_listener_registered = True
+
+    def _reset_worker_state(self) -> None:
         self._write_lock = threading.Lock()
         self._pending_lock = threading.Lock()
         self._pending_event = threading.Event()
@@ -90,27 +118,97 @@ class ConnectionPool:
         self._pending_writes = 0
         self._stop_event = threading.Event()
         self._integrity_checked = False
-
-        if self._cache_disabled:
-            logger.warning("Cache operations will be skipped. This may impact performance.")
-            self.pool = None
-            self._initialized = True
-            return
-
-        logger.debug(f"Cache is enabled. Initializing connection pool at: {self.db_path}")
-        self._initialize_pool()
-        self._start_write_worker()
-        self._initialized = True
-        logger.debug(f"Cache initialization completed successfully with pool size: {self.pool_size}")
+        self._write_queue: Optional[queue.Queue] = queue.Queue()
 
     def _start_write_worker(self):
         """Start the background worker for processing write operations"""
         self._write_worker_thread = threading.Thread(target=self._write_worker, daemon=True)
         self._write_worker_thread.start()
 
+    def _handle_external_state_change(self, disabled: bool) -> None:
+        with self._state_lock:
+            if disabled:
+                self._transition_to_disabled()
+            else:
+                self._transition_to_enabled()
+
+    def _transition_to_disabled(self) -> None:
+        if self._cache_disabled:
+            return
+
+        self._cache_disabled = True
+        logger.info("Disabling cache and shutting down connection pool")
+
+        if hasattr(self, "_stop_event"):
+            self._stop_event.set()
+
+        if hasattr(self, "_write_worker_thread") and self._write_worker_thread.is_alive():
+            self._write_worker_thread.join(timeout=2.0)
+
+        discarded = self._discard_queue_entries()
+        if discarded:
+            logger.debug("Discarded %s pending cache writes", discarded)
+
+        if hasattr(self, "_pending_event"):
+            self._pending_event.set()
+        self._pending_writes = 0
+        self._write_queue = None
+
+        if hasattr(self, "pool") and self.pool is not None:
+            while not self.pool.empty():
+                try:
+                    conn = self.pool.get_nowait()
+                    conn.close()
+                except queue.Empty:
+                    break
+                except sqlite3.Error as exc:
+                    logger.error("Error closing connection during disable: %s", exc)
+            self.pool = None
+
+    def _transition_to_enabled(self) -> None:
+        if not self._cache_disabled:
+            return
+
+        if not self._current_settings:
+            logger.warning("Cannot enable cache: no previous configuration available")
+            return
+
+        self._cache_disabled = False
+        logger.info("Reinitializing cache subsystem after enable request")
+
+        self._reset_worker_state()
+        self._initialize_pool()
+        self._start_write_worker()
+        self._initialized = True
+
+    def _discard_queue_entries(self) -> int:
+        if not hasattr(self, "_write_queue") or self._write_queue is None:
+            return 0
+
+        discarded = 0
+        while True:
+            try:
+                self._write_queue.get_nowait()
+            except queue.Empty:
+                break
+            else:
+                discarded += 1
+                self._write_queue.task_done()
+
+        if discarded:
+            self._mark_writes_completed(discarded)
+
+        return discarded
+
     def _write_worker(self):
         """Background worker that processes batched write operations"""
-        while not self._stop_event.is_set() or not self._write_queue.empty():
+        while not self._stop_event.is_set() or (
+            hasattr(self, "_write_queue") and self._write_queue and not self._write_queue.empty()
+        ):
+            if not hasattr(self, "_write_queue") or self._write_queue is None:
+                time.sleep(self._write_batch_timeout)
+                continue
+
             batch: List[Tuple] = []
 
             try:
@@ -130,6 +228,13 @@ class ConnectionPool:
                     break
 
             if batch:
+                if CacheStateManager.is_disabled():
+                    logger.debug("Dropping cache write batch because caching is disabled")
+                    self._mark_writes_completed(len(batch))
+                    for _ in batch:
+                        self._write_queue.task_done()
+                    continue
+
                 with self._write_lock:
                     try:
                         with self.get_connection_context() as conn:
@@ -164,15 +269,22 @@ class ConnectionPool:
     def _mark_writes_completed(self, count: int) -> None:
         with self._pending_lock:
             self._pending_writes = max(0, self._pending_writes - count)
-            if self._pending_writes == 0 and self._write_queue.empty():
+            queue_empty = (
+                not hasattr(self, "_write_queue")
+                or self._write_queue is None
+                or self._write_queue.empty()
+            )
+            if self._pending_writes == 0 and queue_empty:
                 self._pending_event.set()
 
     def queue_write(self, entry: Tuple, synchronous: bool = False):
         """Queue a write operation to be processed by the write worker"""
-        if self._cache_disabled:
+        if CacheStateManager.is_disabled():
+            self._cache_disabled = True
+            logger.debug("Skipping cache write because caching is disabled")
             return
 
-        if not hasattr(self, "_write_queue"):
+        if not hasattr(self, "_write_queue") or self._write_queue is None:
             self._write_queue = queue.Queue()
 
         with self._pending_lock:
@@ -186,7 +298,8 @@ class ConnectionPool:
 
     def flush(self, timeout: Optional[float] = None) -> bool:
         """Wait until all pending writes are processed."""
-        if self._cache_disabled:
+        if CacheStateManager.is_disabled():
+            self._cache_disabled = True
             return True
 
         logger.debug("Flushing pending cache writes...")
@@ -199,7 +312,11 @@ class ConnectionPool:
 
     def _drain_queue_synchronously(self) -> None:
         """Process any remaining items in the write queue synchronously."""
-        if self._cache_disabled or not hasattr(self, "_write_queue"):
+        if not hasattr(self, "_write_queue") or self._write_queue is None:
+            return
+
+        if CacheStateManager.is_disabled():
+            self._discard_queue_entries()
             return
 
         drained = 0
@@ -237,24 +354,29 @@ class ConnectionPool:
         if drained:
             logger.debug(f"Synchronously processed {drained} pending cache writes")
 
-    def shutdown(self, timeout: Optional[float] = 5.0) -> None:
+    def shutdown(self, timeout: Optional[float] = 5.0, force: bool = False) -> None:
         """Flush remaining writes and stop the worker thread."""
-        if self._cache_disabled:
+        if not hasattr(self, "_stop_event"):
+            return
+
+        if CacheStateManager.is_disabled() and not force:
             return
 
         try:
             self._stop_event.set()
-            self.flush(timeout)
+            if force or not CacheStateManager.is_disabled():
+                self.flush(timeout)
             if hasattr(self, "_write_worker_thread") and self._write_worker_thread.is_alive():
                 self._write_worker_thread.join(timeout)
         except Exception as e:
             logger.error(f"Error while shutting down write worker: {e}")
         finally:
             self._drain_queue_synchronously()
-            self._pending_event.set()
+            if hasattr(self, "_pending_event"):
+                self._pending_event.set()
 
-    def _cleanup(self) -> None:
-        self.shutdown()
+    def _cleanup(self, force: bool = False) -> None:
+        self.shutdown(force=force)
         if hasattr(self, 'pool') and self.pool is not None:
             logger.debug("Cleaning up existing connections...")
             while not self.pool.empty():
@@ -263,6 +385,7 @@ class ConnectionPool:
                     conn.close()
                 except (queue.Empty, sqlite3.Error) as e:
                     logger.error(f"Error during connection cleanup: {e}")
+        self.pool = None
         self._initialized = False
         logger.debug("Connection cleanup completed.")
 
@@ -390,17 +513,12 @@ class ConnectionPool:
                 sys.exit(1)
 
     def _reinitialize_if_needed(self) -> None:
-        settings = QSettings()
-        current_cache_disabled = settings.value("settings/disable_cache", False, bool)
-        
-        if (not self._initialized or 
-            current_cache_disabled != self._current_settings.get('gui_cache_disabled')):
-            logger.debug(f"Cache state changed or not initialized. Reinitializing connection pool.")
-            self.__init__(
-                self.db_path,
-                self._current_settings.get('thread_count', 4),
-                self._current_settings.get('force_disable_cache', False)
-            )
+        desired_disabled = CacheStateManager.is_disabled()
+
+        if desired_disabled and not self._cache_disabled:
+            self._transition_to_disabled()
+        elif not desired_disabled and self._cache_disabled:
+            self._transition_to_enabled()
 
     @contextmanager
     def get_connection_context(self) -> Generator[Optional[sqlite3.Connection], None, None]:
@@ -463,10 +581,10 @@ class ConnectionPool:
         exclude_conn: Optional[sqlite3.Connection] = None,
         drain_timeout: Optional[float] = 5.0,
     ) -> None:
-        if self._cache_disabled or not hasattr(self, 'pool') or self.pool is None:
+        if not hasattr(self, 'pool') or self.pool is None:
             return
 
-        self.shutdown(timeout=drain_timeout)
+        self.shutdown(timeout=drain_timeout, force=True)
 
         closed_connections = 0
         while not self.pool.empty():
@@ -497,6 +615,8 @@ def initialize_connection_pool(
     force_disable_cache: bool = False
 ) -> None:
     global _connection_pool_instance
+    desired_state = force_disable_cache or CacheStateManager.is_disabled()
+    CacheStateManager.set_disabled(desired_state)
     with _pool_lock:
         _connection_pool_instance = ConnectionPool(db_path, thread_count, force_disable_cache)
         logger.debug("Connection pool initialized with current settings.")
@@ -536,6 +656,15 @@ def close_all_connections(
         _connection_pool_instance.close_all_connections(exclude_conn, drain_timeout)
     else:
         logger.warning("Connection pool was not initialised. No connections to close.")
+
+
+def set_cache_disabled(disabled: bool) -> None:
+    CacheStateManager.set_disabled(disabled)
+
+
+def is_cache_disabled() -> bool:
+    return CacheStateManager.is_disabled()
+
 
 def _shutdown():
     try:

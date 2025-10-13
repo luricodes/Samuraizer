@@ -15,6 +15,7 @@ from samuraizer.backend.cache.connection_pool import (
     get_connection_context,
     close_all_connections,
     flush_pending_writes,
+    set_cache_disabled,
 )
 from samuraizer.cli.parser import parse_arguments
 from samuraizer.backend.services.config_services import (
@@ -213,6 +214,7 @@ def run() -> None:
         db_path_str = str(cache_db_path)
         
         # Initialize connection pool with thread count instead of pool size
+        set_cache_disabled(args.no_cache)
         initialize_connection_pool(db_path_str, thread_count=threads, force_disable_cache=args.no_cache)
         
         logging.info(f"Cache initialized at: {cache_dir}")

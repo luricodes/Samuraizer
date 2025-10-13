@@ -3,7 +3,11 @@ import logging
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox
 from PyQt6.QtCore import QSize, QSettings
 from samuraizer.backend.cache.connection_pool import (
-    initialize_connection_pool, close_all_connections, get_connection_context, flush_pending_writes
+    close_all_connections,
+    flush_pending_writes,
+    get_connection_context,
+    initialize_connection_pool,
+    set_cache_disabled,
 )
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
 from samuraizer.core.application import initialize_cache_directory
@@ -89,13 +93,15 @@ class MainWindow(BaseWindow):
             cache_dir = Path(cache_path)
             cache_dir = initialize_cache_directory(cache_dir)
             cache_db_path = cache_dir / CACHE_DB_FILE
-            
+
             logger.info(f"Initializing cache at: {cache_db_path}")
-            
+
             # Get thread count from analysis settings
             thread_count = settings.value("analysis/thread_count", 4, int)
             cache_disabled = settings.value("settings/disable_cache", False, bool)
-            
+
+            set_cache_disabled(cache_disabled)
+
             pool = initialize_connection_pool(
                 str(cache_db_path.absolute()),
                 thread_count=thread_count,

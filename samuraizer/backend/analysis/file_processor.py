@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from samuraizer.backend.cache.cache_operations import get_cached_entry, set_cached_entry
-from samuraizer.backend.cache.connection_pool import get_connection_context
+from samuraizer.backend.cache.connection_pool import get_connection_context, is_cache_disabled
 from samuraizer.backend.cache.cache_cleaner import clean_cache
 from ..analysis.hash_service import HashService
 from ...utils.file_utils.mime_detection import is_binary
@@ -33,6 +33,10 @@ def process_file(
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     filename = file_path.name
     logger.debug(f"Processing file: {file_path} (hash_algorithm: {hash_algorithm})")
+
+    if hash_algorithm is not None and is_cache_disabled():
+        logger.debug("Cache disabled at runtime; ignoring supplied hash algorithm")
+        hash_algorithm = None
 
     try:
         stat = file_path.stat()

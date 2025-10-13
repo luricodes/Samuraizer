@@ -3,7 +3,7 @@ import logging
 from typing import Dict, Any, Optional, Tuple
 from sqlite3 import Connection
 
-from .connection_pool import queue_write
+from .connection_pool import is_cache_disabled, queue_write
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +79,14 @@ def set_cached_entry(
     try:
         # Convert file_info to JSON string
         file_info_json = json.dumps(file_info)
-        
+
         # Create entry tuple for batch processing
         entry = (file_path, file_hash, hash_algorithm, file_info_json, size, mtime)
-        
+
+        if is_cache_disabled():
+            logger.debug("Skipping cache persist for %s (cache disabled)", file_path)
+            return
+
         # Queue the write operation
         queue_write(entry, synchronous=synchronous)
         logger.debug(f"Queued cache entry for batch processing: {file_path}")

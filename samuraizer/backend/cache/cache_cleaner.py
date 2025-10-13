@@ -9,7 +9,12 @@ import time
 from PyQt6.QtCore import QSettings
 
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
-from .connection_pool import get_connection_context, close_all_connections, initialize_connection_pool
+from .connection_pool import (
+    close_all_connections,
+    get_connection_context,
+    initialize_connection_pool,
+    is_cache_disabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +88,11 @@ def check_and_vacuum_if_needed(db_path: Path) -> None:
                 
                 # Reinitialize the connection pool
                 thread_count = settings.value("settings/thread_count", 4, type=int)
-                initialize_connection_pool(str(db_path), thread_count)
+                initialize_connection_pool(
+                    str(db_path),
+                    thread_count,
+                    force_disable_cache=is_cache_disabled(),
+                )
                 
                 # Log new size after cleanup
                 new_size_mb = db_path.stat().st_size / (1024 * 1024)
