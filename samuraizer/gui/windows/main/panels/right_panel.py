@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING, Dict, Any, Optional
 import logging
 from PyQt6.QtWidgets import QMessageBox
-from PyQt6.QtCore import QThread
 from samuraizer.gui.widgets.analysis_viewer.main_viewer import ResultsViewWidget
 from samuraizer.gui.workers.analysis.analyzer_worker import AnalyzerWorker
 
@@ -82,20 +81,18 @@ class RightPanel(ResultsViewWidget):
             raise ValueError("No configuration set")
         return self._configuration.copy()
 
-    def startAnalysis(self, worker: AnalyzerWorker, thread: QThread) -> None:
-        """Start a new analysis with the given worker and thread.
+    def startAnalysis(self, worker: AnalyzerWorker) -> None:
+        """Start a new analysis with the given worker.
         
         Args:
             worker: The analyzer worker instance
-            thread: The thread to run the worker in
         """
         try:
             # Clean up any previous analysis
             self.cleanup()
             
-            # Store worker and thread
+            # Store worker instance
             self.analyzer_worker = worker
-            self.analyzer_thread = thread
             
             # Connect worker signals
             self.analyzer_worker.progress.connect(self.updateProgress)

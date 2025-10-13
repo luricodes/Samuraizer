@@ -15,9 +15,9 @@ GitPython>=3.1.40  # Added for GitHub integration
 
 # GUI requirements
 pydantic==1.10.13
-PyQt6>=6.4.0
-PyQt6-Qt6>=6.4.0
-PyQt6-sip>=13.4.0
+PyQt6>=6.5.0
+PyQt6-Qt6>=6.5.0
+PyQt6-sip>=13.5.0
 PyQt6-WebEngine
 pyvis
 networkx>=3.0
@@ -26,6 +26,7 @@ graphviz>=0.20.1
 PyQtDarkTheme
 requests
 keyring
+qasync>=0.27.1
 
 # Platform-specific magic package
 python-magic-bin==0.4.14; platform_system == "Windows"

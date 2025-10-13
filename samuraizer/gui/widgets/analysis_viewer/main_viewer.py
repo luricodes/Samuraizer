@@ -4,7 +4,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QSplitter, QTabWidget, QMessageBox, QSplitterHandle
 )
-from PyQt6.QtCore import Qt, QThread, QSettings
+from PyQt6.QtCore import Qt, QSettings
 from .components.progress_monitor import ProgressMonitor
 from .components.result_tabs import ResultTabs
 from .handlers.result_processor import ResultProcessor
@@ -68,7 +68,6 @@ class ResultsViewWidget(QWidget):
         super().__init__(parent)
         self.main_window = parent
         self.settings = QSettings()
-        self.analyzer_thread: Optional[QThread] = None
         self.analyzer_worker: Optional[AnalyzerWorker] = None
         self.results_data: Optional[Dict[str, Any]] = None
         self.tab_counter = 0
@@ -247,13 +246,12 @@ class ResultsViewWidget(QWidget):
 
         return f"{prefix} No files were processed"
 
-    def startAnalysis(self, worker: AnalyzerWorker, thread: QThread) -> None:
-        """Start a new analysis with the given worker and thread."""
+    def startAnalysis(self, worker: AnalyzerWorker) -> None:
+        """Start a new analysis with the given worker."""
         try:
             self.cleanup()  # Clean up any previous analysis
 
             self.analyzer_worker = worker
-            self.analyzer_thread = thread
             self._worker_connections = []
 
             # Connect worker signals
@@ -295,11 +293,9 @@ class ResultsViewWidget(QWidget):
         try:
             # Store references locally
             worker = self.analyzer_worker
-            thread = self.analyzer_thread
             
             # Clear instance references immediately
             self.analyzer_worker = None
-            self.analyzer_thread = None
             self.current_progress = 0
             self.total_files = 0
 
@@ -323,30 +319,6 @@ class ResultsViewWidget(QWidget):
                         pass
 
             self._worker_connections.clear()
-
-            # Then clean up thread if it exists
-            if thread is not None:
-                try:
-                    # Only attempt to stop the thread if it's still valid and running
-                    if not thread.parent():  # Check if thread is still valid
-                        return
-                        
-                    if thread.isRunning():
-                        thread.quit()
-                        if not thread.wait(5000):  # Wait up to 5 seconds
-                            try:
-                                thread.terminate()
-                                thread.wait()
-                            except RuntimeError:
-                                pass
-                except RuntimeError:
-                    # Thread might already be deleted
-                    pass
-                else:
-                    try:
-                        thread.deleteLater()
-                    except RuntimeError:
-                        pass
 
             if getattr(self, "details_panel", None) is not None:
                 self.details_panel.clear()

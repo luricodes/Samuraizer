@@ -1,12 +1,13 @@
 """Analysis management with dependency injected collaborators."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
 from typing import Dict, Optional
 
-from PyQt6.QtCore import QSettings, QThread
+from PyQt6.QtCore import QSettings
 
 from samuraizer.gui.workers.analysis.analyzer_worker import AnalyzerWorker
 from samuraizer.gui.windows.main.components.analysis_dependencies import (
@@ -50,8 +51,8 @@ class AnalysisManager:
         self._status_reporter = status_reporter
         self._message_presenter = message_presenter
 
-        self.analyzer_thread: Optional[QThread] = None
         self.analyzer_worker: Optional[AnalyzerWorker] = None
+        self.analysis_task: Optional[asyncio.Task] = None
         self.current_config: Optional[AnalysisConfig] = None
         self.results_data: Optional[Dict[str, object]] = None
 
@@ -88,8 +89,13 @@ class AnalysisManager:
             self._state_controller.set_analysis_state(AnalysisState.RUNNING)
 
             self._setup_analysis_worker(config_payload)
-            self._analysis_display.start_analysis(self.analyzer_worker, self.analyzer_thread)
-            self.analyzer_thread.start()
+            assert self.analyzer_worker is not None
+
+            self._analysis_display.start_analysis(self.analyzer_worker)
+
+            loop = asyncio.get_running_loop()
+            self.analysis_task = loop.create_task(self.analyzer_worker.run())
+            self.analysis_task.add_done_callback(self._on_analysis_task_done)
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.error("Error starting analysis: %s", exc, exc_info=True)
             self._message_presenter.error("Error", f"Failed to start analysis: {exc}")
@@ -100,6 +106,8 @@ class AnalysisManager:
 
         try:
             self._analysis_display.stop_analysis()
+            self._cancel_analysis_task()
+            self._cleanup_previous_analysis()
             self._state_controller.set_analysis_state(AnalysisState.IDLE)
             self._status_reporter.show_message("Analysis stopped.")
         except Exception as exc:  # pragma: no cover - defensive guard
@@ -187,24 +195,32 @@ class AnalysisManager:
             self._cleanup_previous_analysis()
 
             self.analyzer_worker = AnalyzerWorker(config_payload)
-            self.analyzer_thread = QThread()
-            self.analyzer_worker.moveToThread(self.analyzer_thread)
-
-            self.analyzer_thread.started.connect(self.analyzer_worker.run)
             self.analyzer_worker.finished.connect(self._on_analysis_finished)
             self.analyzer_worker.error.connect(self._on_analysis_error)
-            self.analyzer_thread.finished.connect(self._cleanup_previous_analysis)
         except Exception as exc:
             logger.error("Error setting up worker: %s", exc, exc_info=True)
             raise
+
+    def _on_analysis_task_done(self, task: asyncio.Task) -> None:
+        """Handle completion of the asyncio task backing the worker."""
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            logger.debug("Analysis task cancelled")
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.error("Analysis task raised an exception: %s", exc, exc_info=True)
+        finally:
+            if task is self.analysis_task:
+                self.analysis_task = None
 
     def _on_analysis_finished(self, results: Dict[str, object]) -> None:
         """Handle analysis completion."""
 
         self.results_data = results
         self._state_controller.set_analysis_state(AnalysisState.COMPLETED)
-        if self.analyzer_thread:
-            self.analyzer_thread.quit()
+        if self.analysis_task and self.analysis_task.done():
+            self.analysis_task = None
+        self._cleanup_previous_analysis()
 
     def _on_analysis_error(self, error_message: str) -> None:
         """Handle analysis error."""
@@ -214,28 +230,35 @@ class AnalysisManager:
             f"An error occurred during analysis:\n\n{error_message}\n\nCheck the logs for more details.",
         )
         self._state_controller.set_analysis_state(AnalysisState.ERROR)
-        if self.analyzer_thread:
-            self.analyzer_thread.quit()
+        if self.analysis_task and self.analysis_task.done():
+            self.analysis_task = None
+        self._cleanup_previous_analysis()
+
+    def _cancel_analysis_task(self) -> None:
+        """Cancel any running analysis task."""
+        if self.analysis_task:
+            if not self.analysis_task.done():
+                self.analysis_task.cancel()
+            self.analysis_task = None
 
     def _cleanup_previous_analysis(self) -> None:
         """Clean up previous analysis resources."""
 
         try:
-            if self.analyzer_thread and self.analyzer_thread.isRunning():
-                if self.analyzer_worker:
-                    self.analyzer_worker.stop()
-                self.analyzer_thread.quit()
-                if not self.analyzer_thread.wait(5000):  # Wait up to 5 seconds
-                    logger.warning("Thread did not terminate in time, forcing termination")
-                    self.analyzer_thread.terminate()
-                    self.analyzer_thread.wait()
+            task = self.analysis_task
+            was_running = bool(task and not task.done())
+            self._cancel_analysis_task()
 
             if self.analyzer_worker:
-                self.analyzer_worker.deleteLater()
-            if self.analyzer_thread:
-                self.analyzer_thread.deleteLater()
-
-            self.analyzer_thread = None
+                if was_running:
+                    try:
+                        self.analyzer_worker.stop()
+                    except Exception:
+                        logger.debug("Failed to stop analyzer worker during cleanup", exc_info=True)
+                try:
+                    self.analyzer_worker.deleteLater()
+                except Exception:
+                    logger.debug("Analyzer worker already deleted", exc_info=True)
             self.analyzer_worker = None
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.error("Error cleaning up analysis: %s", exc, exc_info=True)

@@ -122,8 +122,8 @@ class AnalysisDisplay(Protocol):
     def set_configuration(self, config: Dict[str, object]) -> None:
         """Provide the configuration to the display surface."""
 
-    def start_analysis(self, worker, thread) -> None:  # pragma: no cover - Qt wiring
-        """Start rendering an analysis run using the given worker and thread."""
+    def start_analysis(self, worker) -> None:  # pragma: no cover - Qt wiring
+        """Start rendering an analysis run using the given worker."""
 
     def stop_analysis(self) -> None:  # pragma: no cover - Qt wiring
         """Stop rendering the current analysis run."""
@@ -215,8 +215,8 @@ class UIAnalysisDisplay(AnalysisDisplay):
     def set_configuration(self, config: Dict[str, object]) -> None:
         self._right_panel.setConfiguration(config)
 
-    def start_analysis(self, worker, thread) -> None:  # pragma: no cover - Qt wiring
-        self._right_panel.startAnalysis(worker, thread)
+    def start_analysis(self, worker) -> None:  # pragma: no cover - Qt wiring
+        self._right_panel.startAnalysis(worker)
 
     def stop_analysis(self) -> None:  # pragma: no cover - Qt wiring
         self._right_panel.stopAnalysis()

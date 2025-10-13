@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import threading
 import time
@@ -160,42 +161,36 @@ class AnalyzerWorker(QObject):
         self.progress.emit(current, adjusted_total)
         self.fileProcessed.emit(current)
 
-    def run(self):
-        """Main worker execution method."""
+    async def run(self):
+        """Main worker execution method executed via asyncio."""
+        results: Optional[Dict[str, Any]] = None
         try:
-            # Ensure per-run cancellation is reset
             self._cancellation.reset()
             self._stop_requested = False
-            
+
             self.status.emit("Initializing analysis...")
-            
-            # Validate configuration
+
             if not self._validate_config():
                 return
-            
-            # Extract configuration
+
             repo_config = self.config.get('repository', {})
             filters_config = self.config.get('filters', {})
             output_config = self.config.get('output', {})
-            
-            # Set up path and basic parameters
+
             root_dir = Path(repo_config.get('repository_path'))
             if not root_dir.exists():
                 raise FileNotFoundError(f"Repository path does not exist: {root_dir}")
-            
-            # Check if cache is disabled in settings
+
             settings = QSettings()
-            cache_disabled = settings.value("settings/disable_cache", False, type=bool)
-            set_cache_disabled(cache_disabled)
+            cache_disabled_setting = settings.value("settings/disable_cache", False, type=bool)
+            set_cache_disabled(cache_disabled_setting)
             cache_disabled = is_cache_disabled()
             logger.debug(f"Cache disabled setting: {cache_disabled}")
-            
-            # Get hash algorithm from config, defaulting to xxhash if caching is enabled
+
             hash_algorithm = None if cache_disabled else repo_config.get('hash_algorithm', 'xxhash')
             logger.debug(f"Using hash algorithm: {hash_algorithm}")
-            
-            # Configure analysis parameters
-            analysis_params = {
+
+            analysis_params: Dict[str, Any] = {
                 'root_dir': root_dir,
                 'max_file_size': repo_config.get('max_file_size', 50) * 1024 * 1024,
                 'include_binary': repo_config.get('include_binary', False),
@@ -206,11 +201,10 @@ class AnalyzerWorker(QObject):
                 'exclude_patterns': filters_config.get('exclude_patterns', []),
                 'threads': repo_config.get('thread_count', 4),
                 'encoding': repo_config.get('encoding'),
-                'hash_algorithm': hash_algorithm,  # Use the determined hash_algorithm
+                'hash_algorithm': hash_algorithm,
                 'cancellation_token': self._cancellation.token,
             }
 
-            # Initialize progress tracking and start background estimation
             self.processed_files = 0
             self.total_files = 0
             self._update_progress(0, 0)
@@ -222,83 +216,130 @@ class AnalyzerWorker(QObject):
                 analysis_params.get('exclude_patterns') or [],
             )
 
-            results = None
+            output_format = self._map_format_name(output_config.get('format', 'json'))
+            is_streaming_format = output_format in ['jsonl']
+            use_streaming = output_config.get('streaming', True) or is_streaming_format
+
             try:
-                output_format = self._map_format_name(output_config.get('format', 'json'))
-                is_streaming_format = output_format in ['jsonl']
-
-                use_streaming = output_config.get('streaming', True) or is_streaming_format
-
                 if use_streaming:
                     self.status.emit("Starting streaming analysis...")
-                    # Get both the generator for output and collected results for GUI
-                    generator, results = self._run_streaming_analysis(analysis_params)
-
-                    # Process output if needed
-                    output_path = output_config.get('output_path')
-                    if not self._stop_requested and output_path:
-                        # Remove summary if not included
-                        if not output_config.get('include_summary', True):
-                            generator = (entry for entry in generator if "summary" not in entry)
-                        self._write_output(generator, output_config)
+                    results = await asyncio.to_thread(
+                        self._execute_streaming_analysis,
+                        analysis_params,
+                        output_config,
+                    )
                 else:
                     self.status.emit("Starting analysis...")
-                    results = self._run_standard_analysis(analysis_params)
-
-                    # Process output if needed
-                    output_path = output_config.get('output_path')
-                    if not self._stop_requested and output_path:
-                        # Remove summary if not included
-                        if not output_config.get('include_summary', True) and isinstance(results, dict):
-                            results = {"structure": results.get("structure", {})}
-                        self._write_output(results, output_config)
-                
-                if self._stop_requested:
-                    # Update status with progress information
-                    progress_percent = int((self.processed_files / self.total_files) * 100) if self.total_files > 0 else 0
-                    status_msg = f"Analysis stopped at {progress_percent}% ({self.processed_files} of {self.total_files} files)"
-                    self.status.emit(status_msg)
-                    
-                    # Ensure the results include the stopped_early flag
-                    if results and isinstance(results, dict):
-                        if 'summary' not in results:
-                            results['summary'] = {}
-                        results['summary']['stopped_early'] = True
-                        results['summary']['processed_files'] = self.processed_files
-                        results['summary']['total_files'] = self.total_files
-                else:
-                    self.status.emit("Analysis completed")
-
-                # Check cache size after analysis if cache is enabled
-                if not cache_disabled:
-                    self.status.emit("Checking cache size...")
-                    cache_path = settings.value("settings/cache_path", "")
-                    if not cache_path:
-                        cache_path = str(Path.cwd() / ".cache")
-                    db_path = Path(cache_path) / CACHE_DB_FILE
-                    check_and_vacuum_if_needed(db_path)
-                    
-                    # Reinitialize connection pool with current thread count
-                    thread_count = repo_config.get('thread_count', 4)
-                    initialize_connection_pool(
-                        str(db_path),
-                        thread_count,
-                        force_disable_cache=is_cache_disabled(),
+                    results = await asyncio.to_thread(
+                        self._execute_standard_analysis,
+                        analysis_params,
+                        output_config,
                     )
-                
-                # Emit results even if stopped
-                self.finished.emit(results)
+            except asyncio.CancelledError:
+                logger.info("Analysis task cancelled")
+                self._stop_requested = True
+                raise
 
-            except Exception as e:
-                logger.error(f"Analysis error: {e}", exc_info=True)
-                self.error.emit(f"Analysis failed: {str(e)}")
-                return
-            finally:
-                self._stop_file_estimator()
+            if self._stop_requested:
+                progress_percent = int((self.processed_files / self.total_files) * 100) if self.total_files > 0 else 0
+                status_msg = f"Analysis stopped at {progress_percent}% ({self.processed_files} of {self.total_files} files)"
+                self.status.emit(status_msg)
+                results = self._finalize_stop_summary(results)
+            else:
+                self.status.emit("Analysis completed")
 
+            if results is None:
+                results = {}
+
+            if not cache_disabled:
+                self.status.emit("Checking cache size...")
+                cache_path_setting = settings.value("settings/cache_path", "")
+                if not cache_path_setting:
+                    cache_path_setting = str(Path.cwd() / ".cache")
+                thread_count = repo_config.get('thread_count', 4)
+                await asyncio.to_thread(
+                    self._post_analysis_cache_maintenance,
+                    cache_path_setting,
+                    thread_count,
+                )
+
+            self.finished.emit(results)
+
+        except asyncio.CancelledError:
+            self.status.emit("Analysis cancelled by user")
+            results = self._finalize_stop_summary(results)
+            self.finished.emit(results)
         except Exception as e:
             logger.error(f"Worker initialization error: {e}", exc_info=True)
             self.error.emit(f"Failed to initialize analysis: {str(e)}")
+        finally:
+            self._stop_file_estimator()
+
+    def _execute_standard_analysis(
+        self,
+        params: Dict[str, Any],
+        output_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run standard analysis and handle optional output writing."""
+        local_params = dict(params)
+        results = self._run_standard_analysis(local_params)
+
+        if self._stop_requested:
+            return results
+
+        output_path = output_config.get('output_path')
+        if output_path:
+            payload = results
+            if not output_config.get('include_summary', True) and isinstance(results, dict):
+                payload = {"structure": results.get("structure", {})}
+            self._write_output(payload, output_config)
+
+        return results
+
+    def _execute_streaming_analysis(
+        self,
+        params: Dict[str, Any],
+        output_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run streaming analysis and handle optional streaming output."""
+        local_params = dict(params)
+        generator, results = self._run_streaming_analysis(local_params)
+
+        if self._stop_requested:
+            return results
+
+        output_path = output_config.get('output_path')
+        if output_path:
+            stream = generator
+            if not output_config.get('include_summary', True):
+                stream = (entry for entry in stream if "summary" not in entry)
+            self._write_output(stream, output_config)
+
+        return results
+
+    def _post_analysis_cache_maintenance(self, cache_path: str, thread_count: int) -> None:
+        """Vacuum cache database and refresh connection pool."""
+        try:
+            db_path = Path(cache_path) / CACHE_DB_FILE
+            check_and_vacuum_if_needed(db_path)
+            initialize_connection_pool(
+                str(db_path),
+                thread_count,
+                force_disable_cache=is_cache_disabled(),
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning("Cache maintenance failed: %s", exc, exc_info=True)
+
+    def _finalize_stop_summary(self, results: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Ensure stop metadata is captured in the summary."""
+        if results is None:
+            results = {}
+        if isinstance(results, dict):
+            summary = results.setdefault('summary', {})
+            summary['stopped_early'] = True
+            summary['processed_files'] = self.processed_files
+            summary['total_files'] = self.total_files
+        return results
 
     def _validate_config(self) -> bool:
         """Validate the configuration."""

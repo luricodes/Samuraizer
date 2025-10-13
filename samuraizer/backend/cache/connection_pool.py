@@ -1,5 +1,6 @@
 # samuraizer/backend/cache/connection_pool.py
 
+import asyncio
 import atexit
 import logging
 import queue
@@ -7,9 +8,9 @@ import sqlite3
 import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple, AsyncGenerator
 
 from .cache_state import CacheStateManager
 
@@ -552,6 +553,42 @@ class ConnectionPool:
                 self.pool.put(conn)
                 logger.debug("Connection returned to pool")
 
+    def _blocking_get_connection(self) -> Optional[sqlite3.Connection]:
+        """Blocking helper to acquire a connection for async wrappers."""
+        self._reinitialize_if_needed()
+
+        if self._cache_disabled:
+            logger.debug("Cache access skipped (caching disabled)")
+            return None
+
+        try:
+            conn = self.pool.get(timeout=20.0)
+            if not self._validate_connection(conn):
+                logger.warning("Connection is invalid. Creating a new connection.")
+                conn = self._create_new_connection(conn)
+            return conn
+        except queue.Empty as exc:
+            logger.error("No available database connections in the pool. Timeout reached.")
+            raise RuntimeError("No database connections available") from exc
+
+    def _return_connection(self, conn: Optional[sqlite3.Connection]) -> None:
+        """Return a connection to the pool handling commit/rollback."""
+        if not conn:
+            return
+        if not hasattr(self, "pool") or self.pool is None:
+            return
+
+        try:
+            conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Error committing transaction: {e}")
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                logger.debug("Rollback failed after commit error", exc_info=True)
+        self.pool.put(conn)
+        logger.debug("Connection returned to pool")
+
     def _validate_connection(self, conn: sqlite3.Connection) -> bool:
         try:
             conn.execute("SELECT 1;")
@@ -629,12 +666,35 @@ def get_connection_context() -> Generator[Optional[sqlite3.Connection], None, No
     with _connection_pool_instance.get_connection_context() as conn:
         yield conn
 
+@asynccontextmanager
+async def get_connection_context_async() -> AsyncGenerator[Optional[sqlite3.Connection], None]:
+    if _connection_pool_instance is None:
+        logger.error("Connection pool is not initialised. Please call initialize_connection_pool.")
+        raise RuntimeError("Connection pool not initialised.")
+
+    loop = asyncio.get_running_loop()
+    conn = await loop.run_in_executor(None, _connection_pool_instance._blocking_get_connection)
+
+    if conn is None:
+        yield None
+        return
+
+    try:
+        yield conn
+    finally:
+        await loop.run_in_executor(None, _connection_pool_instance._return_connection, conn)
+
 def queue_write(entry: Tuple, synchronous: bool = False) -> None:
     """Queue a write operation to be processed in batch"""
     if _connection_pool_instance is not None:
         _connection_pool_instance.queue_write(entry, synchronous=synchronous)
     else:
         logger.warning("Connection pool not initialized. Write operation skipped.")
+
+async def queue_write_async(entry: Tuple) -> None:
+    """Async helper for queuing write operations."""
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, queue_write, entry, False)
 
 
 def queue_write_sync(entry: Tuple) -> None:
