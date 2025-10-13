@@ -198,7 +198,7 @@ class MainWindow(BaseWindow):
                 
             # Clean up ConfigurationManager
             try:
-                ConfigurationManager.cleanup()
+                ConfigurationManager().cleanup()
                 logger.info("Configuration manager cleaned up successfully")
             except Exception as e:
                 logger.error(f"Error cleaning up configuration manager: {e}", exc_info=True)

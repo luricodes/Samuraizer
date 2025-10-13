@@ -153,6 +153,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
             # Get default path for display only
             default_path = Path.cwd() / ".cache"
             self.cache_path_label.setText(f"Using default: {default_path}")
+            self.config_manager.set_value("cache.path", str(default_path))
             
             # Force settings to sync
             self.settings.sync()
@@ -224,7 +225,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
                     self.settings.sync()  # Force immediate sync
                     logger.warning(f"Cache path updated and synced to: {abs_path}")
                     logger.warning(f"Takes effect after program restart")
-
+                    self.config_manager.set_value("cache.path", abs_path)
                     # Update cache size display
                     self.update_current_cache_size()
                 except Exception as e:
@@ -233,6 +234,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
                     self.cache_path_label.setText(str(cache_path))
                     self.settings.setValue("settings/cache_path", str(cache_path))
                     self.settings.sync()
+                    self.config_manager.set_value("cache.path", str(cache_path))
 
         except Exception as e:
             logger.error(f"Error selecting cache path: {e}", exc_info=True)
@@ -274,6 +276,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
 
             # Propagate runtime cache state immediately
             set_cache_disabled(cache_disabled)
+            self.config_manager.set_value("analysis.cache_enabled", not cache_disabled)
             
             # Show/hide warning
             self.cache_warning.setVisible(cache_disabled)
@@ -296,50 +299,56 @@ class CacheSettingsGroup(BaseSettingsGroup):
     def load_settings(self) -> None:
         """Load cache settings."""
         try:
-            # Block signals during loading
+            config = self.config_manager.get_active_profile_config()
+            analysis_cfg = config.get("analysis", {})
+            cache_cfg = config.get("cache", {})
+
             self.disable_cache.blockSignals(True)
-            
-            # Load cache settings
-            disable_cache = self.settings.value(
-                "settings/disable_cache",
-                False,
-                type=bool
+
+            disable_cache_setting = self.settings.value("settings/disable_cache", None)
+            if disable_cache_setting is None:
+                disable_cache = not bool(analysis_cfg.get("cache_enabled", True))
+            else:
+                disable_cache = bool(disable_cache_setting)
+
+            cleanup_setting = self.settings.value("settings/cache_cleanup", None)
+            cleanup_days = (
+                int(cleanup_setting)
+                if cleanup_setting is not None
+                else int(cache_cfg.get("cleanup_days", 30))
             )
-            self.cache_cleanup.setValue(
-                int(self.settings.value("settings/cache_cleanup", 7))
+            self.cache_cleanup.setValue(cleanup_days)
+
+            size_setting = self.settings.value("settings/max_cache_size", None)
+            size_limit = (
+                int(size_setting)
+                if size_setting is not None
+                else int(cache_cfg.get("size_limit_mb", 1000))
             )
-            self.max_cache_size.setValue(
-                int(self.settings.value("settings/max_cache_size", 1000))  # Default 1GB
-            )
-            
-            # Load cache path or show default
+            self.max_cache_size.setValue(size_limit)
+
             cache_path = self.settings.value("settings/cache_path", "")
+            if not cache_path:
+                cache_path = cache_cfg.get("path") or str(Path.cwd() / ".cache")
             if cache_path:
-                self.cache_path_label.setText(cache_path)
+                self.cache_path_label.setText(str(cache_path))
             else:
                 default_path = Path.cwd() / ".cache"
                 self.cache_path_label.setText(f"Using default: {default_path}")
-            
-            # Store initial cache state
+
             self._initial_cache_state = disable_cache
-            
-            # Set cache state after loading all settings
             self.disable_cache.setChecked(disable_cache)
-            
-            # Update UI state without showing warning
+
             self.cache_warning.setVisible(disable_cache)
             self.cache_cleanup.setEnabled(not disable_cache)
             self.cache_path.setEnabled(not disable_cache)
             self.cache_path_label.setEnabled(not disable_cache)
             self.reset_cache_btn.setEnabled(not disable_cache)
             self.max_cache_size.setEnabled(not disable_cache)
-            
-            # Update current cache size
+
             self.update_current_cache_size()
-            
-            # Re-enable signals
             self.disable_cache.blockSignals(False)
-            
+
         except Exception as e:
             logger.error(f"Error loading cache settings: {e}", exc_info=True)
             raise
@@ -377,6 +386,16 @@ class CacheSettingsGroup(BaseSettingsGroup):
                     logger.error(f"Error resolving cache path: {path_error}")
                     # Still save the original path if resolution fails
                     self.settings.setValue("settings/cache_path", cache_path)
+                    abs_path = cache_path
+            else:
+                abs_path = ""
+
+            cache_disabled = self.disable_cache.isChecked()
+            self.config_manager.set_value("analysis.cache_enabled", not cache_disabled)
+            self.config_manager.set_value("cache.cleanup_days", self.cache_cleanup.value())
+            self.config_manager.set_value("cache.size_limit_mb", self.max_cache_size.value())
+            if cache_path:
+                self.config_manager.set_value("cache.path", abs_path)
                 
         except Exception as e:
             logger.error(f"Error saving cache settings: {e}", exc_info=True)

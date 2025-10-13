@@ -9,9 +9,10 @@ from ..base_dialog import BaseDialog
 from .groups import (
     GeneralSettingsGroup,
     ThemeSettingsGroup,
-    CacheSettingsGroup
+    CacheSettingsGroup,
+    ProfileSettingsGroup,
+    TimezoneSettingsGroup,
 )
-from .groups.timezone_settings import TimezoneSettingsGroup
 
 if TYPE_CHECKING:
     from ...windows import MainWindow
@@ -37,6 +38,7 @@ class SettingsDialog(BaseDialog):
             self.tab_widget = QTabWidget()
             
             # Create settings groups using modular components
+            self.profile_settings = ProfileSettingsGroup(self)
             self.general_settings = GeneralSettingsGroup(self)
             self.theme_settings = ThemeSettingsGroup(self)
             self.cache_settings = CacheSettingsGroup(self)
@@ -46,6 +48,7 @@ class SettingsDialog(BaseDialog):
             # General tab
             general_tab = QWidget()
             general_layout = QVBoxLayout()
+            general_layout.addWidget(self.profile_settings)
             general_layout.addWidget(self.general_settings)
             general_layout.addWidget(self.theme_settings)
             general_layout.addStretch()
@@ -80,6 +83,7 @@ class SettingsDialog(BaseDialog):
             self.theme_settings.load_settings()
             self.cache_settings.load_settings()
             self.timezone_settings.load_settings()
+            self.profile_settings.load_settings()
             logger.debug("All settings loaded successfully")
         except Exception as e:
             logger.error(f"Error loading settings: {e}", exc_info=True)
@@ -92,6 +96,7 @@ class SettingsDialog(BaseDialog):
             self.theme_settings.save_settings()
             self.cache_settings.save_settings()
             self.timezone_settings.save_settings()
+            self.profile_settings.save_settings()
             
             # Force settings to sync to disk
             self.settings.sync()
@@ -104,10 +109,11 @@ class SettingsDialog(BaseDialog):
         """Validate settings from all components."""
         try:
             valid = (
-                self.general_settings.validate() and
-                self.theme_settings.validate() and
-                self.cache_settings.validate() and
-                self.timezone_settings.validate()
+                self.profile_settings.validate()
+                and self.general_settings.validate()
+                and self.theme_settings.validate()
+                and self.cache_settings.validate()
+                and self.timezone_settings.validate()
             )
             return valid
         except Exception as e:

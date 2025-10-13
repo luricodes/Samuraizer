@@ -6,6 +6,8 @@ from typing import Dict, Iterable, Optional, Protocol, runtime_checkable, Sequen
 
 from PyQt6.QtWidgets import QMessageBox
 
+from samuraizer.config.config_manager import ConfigurationManager
+
 
 class RepositoryValidationError(Exception):
     """Raised when a repository selection fails validation."""
@@ -279,6 +281,22 @@ class UIAnalysisConfigCollector(AnalysisConfigCollector):
             pretty_print=output_config.get("pretty_print", True),
             use_compression=output_config.get("use_compression", False),
         )
+
+        config_manager = ConfigurationManager()
+        config_manager.set_value("analysis.max_file_size_mb", repo_cfg.max_file_size)
+        config_manager.set_value("analysis.include_binary", repo_cfg.include_binary)
+        config_manager.set_value("analysis.follow_symlinks", repo_cfg.follow_symlinks)
+        config_manager.set_value("analysis.encoding", repo_cfg.encoding or "auto")
+        config_manager.set_value("analysis.threads", repo_cfg.thread_count)
+        config_manager.set_value("analysis.hash_algorithm", repo_cfg.hash_algorithm)
+        if repo_cfg.cache_path:
+            config_manager.set_value("cache.path", repo_cfg.cache_path)
+        if output_cfg.format:
+            config_manager.set_value("analysis.default_format", output_cfg.format)
+        config_manager.set_value("analysis.include_summary", output_cfg.include_summary)
+        config_manager.set_value("output.streaming", output_cfg.streaming)
+        config_manager.set_value("output.pretty_print", output_cfg.pretty_print)
+        config_manager.set_value("output.compression", output_cfg.use_compression)
 
         return AnalysisConfig(
             repository=repo_cfg,

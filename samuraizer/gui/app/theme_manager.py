@@ -6,6 +6,8 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QSettings, Qt
 import qdarktheme
 
+from samuraizer.config.config_manager import ConfigurationManager
+
 logger = logging.getLogger(__name__)
 
 class ThemeManager:
@@ -14,12 +16,23 @@ class ThemeManager:
     @staticmethod
     def get_saved_theme() -> str:
         """Get the saved theme from settings."""
+        try:
+            config = ConfigurationManager().get_active_profile_config()
+            theme = config.get("theme", {}).get("name")
+            if theme:
+                return str(theme)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Unable to read theme from configuration: %s", exc)
         settings = QSettings()
         return settings.value("theme", "dark", str)
     
     @staticmethod
     def save_theme(theme: str) -> None:
         """Save the current theme to settings."""
+        try:
+            ConfigurationManager().set_value("theme.name", theme)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Unable to persist theme to configuration: %s", exc)
         settings = QSettings()
         settings.setValue("theme", theme)
         settings.sync()

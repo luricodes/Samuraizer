@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import threading
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, Iterable, List, Optional, Set, Tuple, TypeVar, Generic
 
@@ -25,7 +27,13 @@ try:  # Python 3.11+
 except ModuleNotFoundError:  # pragma: no cover - fallback for Python <3.11
     import tomli as tomllib  # type: ignore[no-redef]
 
-from jsonschema import Draft202012Validator, ValidationError
+try:
+    from jsonschema import Draft202012Validator, ValidationError
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency must be installed
+    raise ImportError(
+        "The 'jsonschema' package is required for configuration validation. "
+        "Install it with 'pip install jsonschema' inside your Samuraizer environment."
+    ) from exc
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -417,6 +425,19 @@ class UnifiedConfigManager:
         except Exception as exc:  # pragma: no cover - fatal configuration error
             raise ConfigIOError(f"Unable to create configuration directory: {exc}") from exc
 
+    def _backup_existing_config(self, suffix: str = "backup") -> Optional[Path]:
+        if not self._config_path.exists():
+            return None
+        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        backup_name = f"{self._config_path.name}.{suffix}.{timestamp}.bak"
+        backup_path = self._config_path.with_name(backup_name)
+        try:
+            shutil.copy2(self._config_path, backup_path)
+            return backup_path
+        except Exception as exc:  # pragma: no cover - best effort
+            logger.warning("Failed to create configuration backup at %s: %s", backup_path, exc)
+            return None
+
     def _write_config(self) -> None:
         self._ensure_directory()
         try:
@@ -638,46 +659,53 @@ class UnifiedConfigManager:
     def migrate(self) -> bool:
         """Attempt to migrate configuration from legacy sources."""
 
-        migrated = False
-        legacy_dirs = self._legacy_directories()
-        for legacy_dir in legacy_dirs:
-            exclusions_file = legacy_dir / "exclusions.yaml"
-            if exclusions_file.exists():
+        with self._lock:
+            migrated = False
+            legacy_dirs = self._legacy_directories()
+            for legacy_dir in legacy_dirs:
+                exclusions_file = legacy_dir / "exclusions.yaml"
+                if exclusions_file.exists():
+                    try:
+                        with exclusions_file.open("r", encoding="utf-8") as fh:
+                            data = yaml.safe_load(fh) or {}
+                        folders = data.get("exclusions", {}).get("folders", [])
+                        files = data.get("exclusions", {}).get("files", [])
+                        patterns = data.get("exclusions", {}).get("patterns", [])
+                        images = data.get("image_extensions", [])
+                        self._merge_legacy_exclusions(folders, files, patterns, images)
+                        migrated = True
+                    except Exception as exc:
+                        raise ConfigMigrationError(
+                            f"Failed to migrate legacy exclusions from {exclusions_file}: {exc}"
+                        ) from exc
+            timezone_file = Path.home() / ".samuraizer" / "timezone_config.json"
+            if timezone_file.exists():
                 try:
-                    with exclusions_file.open("r", encoding="utf-8") as fh:
-                        data = yaml.safe_load(fh) or {}
-                    folders = data.get("exclusions", {}).get("folders", [])
-                    files = data.get("exclusions", {}).get("files", [])
-                    patterns = data.get("exclusions", {}).get("patterns", [])
-                    images = data.get("image_extensions", [])
-                    self._merge_legacy_exclusions(folders, files, patterns, images)
+                    import json
+
+                    with timezone_file.open("r", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    timezone_section = self._raw_config.setdefault("timezone", {})
+                    timezone_section["use_utc"] = bool(data.get("use_utc", False))
+                    timezone_section["repository_timezone"] = data.get("repository_timezone")
                     migrated = True
                 except Exception as exc:
                     raise ConfigMigrationError(
-                        f"Failed to migrate legacy exclusions from {exclusions_file}: {exc}"
+                        f"Failed to migrate timezone configuration from {timezone_file}: {exc}"
                     ) from exc
-        timezone_file = Path.home() / ".samuraizer" / "timezone_config.json"
-        if timezone_file.exists():
-            try:
-                import json
-
-                with timezone_file.open("r", encoding="utf-8") as fh:
-                    data = json.load(fh)
-                timezone_section = self._raw_config.setdefault("timezone", {})
-                timezone_section["use_utc"] = bool(data.get("use_utc", False))
-                timezone_section["repository_timezone"] = data.get("repository_timezone")
+            if self._migrate_qsettings():
                 migrated = True
-            except Exception as exc:
-                raise ConfigMigrationError(
-                    f"Failed to migrate timezone configuration from {timezone_file}: {exc}"
-                ) from exc
-        if migrated:
-            self._write_config()
-            self._profile_cache.clear()
-            logger.info("Legacy configuration migrated into %s", self._config_path)
-        else:
-            logger.info("No legacy configuration files found for migration")
-        return migrated
+
+            if migrated:
+                backup_path = self._backup_existing_config(suffix="migration")
+                self._write_config()
+                self._profile_cache.clear()
+                if backup_path:
+                    logger.info("Existing configuration backed up to %s", backup_path)
+                logger.info("Legacy configuration migrated into %s", self._config_path)
+            else:
+                logger.info("No legacy configuration files found for migration")
+            return migrated
 
     def _legacy_directories(self) -> List[Path]:
         legacy_paths: List[Path] = []
@@ -707,6 +735,91 @@ class UnifiedConfigManager:
         patterns_section[:] = list(dict.fromkeys(patterns_section + list(patterns)))
         images_section[:] = list(dict.fromkeys(images_section + list(images)))
 
+    def _migrate_qsettings(self) -> bool:
+        """Attempt to migrate settings persisted via QSettings."""
+        try:
+            from PyQt6.QtCore import QSettings  # type: ignore
+        except Exception as exc:  # pragma: no cover - PyQt may be unavailable in CLI environments
+            logger.debug("Qt settings migration skipped: %s", exc)
+            return False
+
+        settings = QSettings()
+        if not settings.allKeys():
+            return False
+
+        migrated = False
+        analysis = self._raw_config.setdefault("analysis", {})
+        cache = self._raw_config.setdefault("cache", {})
+        output = self._raw_config.setdefault("output", {})
+        theme = self._raw_config.setdefault("theme", {})
+
+        def _set(container: Dict[str, Any], key: str, value: Any) -> None:
+            nonlocal migrated
+            container[key] = value
+            migrated = True
+
+        max_file_size = settings.value("analysis/max_file_size", None, type=int)
+        if max_file_size is not None:
+            _set(analysis, "max_file_size_mb", int(max_file_size))
+
+        include_binary = settings.value("analysis/include_binary", None, type=bool)
+        if include_binary is not None:
+            _set(analysis, "include_binary", bool(include_binary))
+
+        follow_symlinks = settings.value("analysis/follow_symlinks", None, type=bool)
+        if follow_symlinks is not None:
+            _set(analysis, "follow_symlinks", bool(follow_symlinks))
+
+        encoding = settings.value("analysis/encoding", None)
+        if encoding:
+            _set(analysis, "encoding", str(encoding))
+
+        thread_count = settings.value("analysis/thread_count", None, type=int)
+        if thread_count is not None and thread_count > 0:
+            _set(analysis, "threads", int(thread_count))
+
+        disable_cache = settings.value("settings/disable_cache", None, type=bool)
+        if disable_cache is not None:
+            _set(analysis, "cache_enabled", not bool(disable_cache))
+
+        cache_path = settings.value("settings/cache_path", None)
+        if cache_path:
+            _set(cache, "path", str(cache_path))
+
+        cache_cleanup = settings.value("settings/cache_cleanup", None, type=int)
+        if cache_cleanup is not None and cache_cleanup > 0:
+            _set(cache, "cleanup_days", int(cache_cleanup))
+
+        cache_size = settings.value("settings/max_cache_size", None, type=int)
+        if cache_size is not None and cache_size > 0:
+            _set(cache, "size_limit_mb", int(cache_size))
+
+        default_format = settings.value("output/format", None)
+        if default_format and default_format.strip() and default_format.lower() != "choose output format":
+            _set(analysis, "default_format", default_format.strip().lower())
+
+        streaming_enabled = settings.value("output/streaming", None, type=bool)
+        if streaming_enabled is not None:
+            _set(output, "streaming", bool(streaming_enabled))
+
+        include_summary = settings.value("output/include_summary", None, type=bool)
+        if include_summary is not None:
+            _set(analysis, "include_summary", bool(include_summary))
+
+        pretty_print = settings.value("output/pretty_print", None, type=bool)
+        if pretty_print is not None:
+            _set(output, "pretty_print", bool(pretty_print))
+
+        compression = settings.value("output/use_compression", None, type=bool)
+        if compression is not None:
+            _set(output, "compression", bool(compression))
+
+        theme_name = settings.value("theme", None)
+        if theme_name:
+            _set(theme, "name", str(theme_name).lower())
+
+        return migrated
+
     # ------------------------------------------------------------------
     # Export helpers
     # ------------------------------------------------------------------
@@ -718,14 +831,62 @@ class UnifiedConfigManager:
     def import_profile(self, name: str, data: Dict[str, Any], inherit: str = "default") -> None:
         if not name:
             raise ConfigError("Profile name must not be empty")
+        if name == "default":
+            raise ConfigError("The default profile cannot be overwritten")
         with self._lock:
             profiles = self._raw_config.setdefault("profiles", {})
+            if name in profiles:
+                raise ConfigError(f"Profile '{name}' already exists")
             profile_data = deepcopy(data)
             profile_data["inherit"] = inherit
             profiles[name] = profile_data
             self._write_config()
             self._profile_cache.clear()
             self._notify_change()
+
+    def remove_profile(self, name: str) -> None:
+        if name == "default":
+            raise ConfigError("The default profile cannot be deleted")
+        with self._lock:
+            profiles = self._raw_config.get("profiles", {})
+            if name not in profiles:
+                raise ConfigError(f"Profile '{name}' does not exist")
+            del profiles[name]
+            for profile in profiles.values():
+                if profile.get("inherit") == name:
+                    profile["inherit"] = "default"
+            if self._active_profile == name:
+                self._active_profile = "default"
+            self._write_config()
+            self._profile_cache.clear()
+            self._notify_change()
+
+    def rename_profile(self, current_name: str, new_name: str) -> None:
+        if current_name == "default":
+            raise ConfigError("The default profile cannot be renamed")
+        if not new_name or new_name == "default":
+            raise ConfigError("Invalid profile name supplied")
+        with self._lock:
+            profiles = self._raw_config.setdefault("profiles", {})
+            if current_name not in profiles:
+                raise ConfigError(f"Profile '{current_name}' does not exist")
+            if new_name in profiles:
+                raise ConfigError(f"Profile '{new_name}' already exists")
+            profile_data = profiles.pop(current_name)
+            profiles[new_name] = profile_data
+            for profile in profiles.values():
+                if profile.get("inherit") == current_name:
+                    profile["inherit"] = new_name
+            if self._active_profile == current_name:
+                self._active_profile = new_name
+            self._write_config()
+            self._profile_cache.clear()
+            self._notify_change()
+
+    def list_profiles(self) -> List[str]:
+        with self._lock:
+            extra = sorted(self._raw_config.get("profiles", {}).keys())
+        return ["default", *extra]
 
 
 # ---------------------------------------------------------------------------
@@ -740,6 +901,10 @@ class ExclusionConfig:
         self._manager = manager or UnifiedConfigManager()
         self._lock = threading.RLock()
         self._change_callbacks: List[Callable[[], None]] = []
+
+    @property
+    def config_file(self) -> str:
+        return str(self._manager.config_path)
 
     # ------------------------------------------------------------------
     # Retrieval helpers
@@ -882,6 +1047,59 @@ class ConfigurationManager(Generic[WidgetType]):
 
     def set_active_profile(self, profile: str) -> None:
         self.unified.set_active_profile(profile)
+        self._notify_change()
+
+    def list_profiles(self) -> List[str]:
+        return self.unified.list_profiles()
+
+    def create_profile(self, name: str, inherit: Optional[str] = None) -> None:
+        base = inherit or "default"
+        data = self.unified.export_profile(base)
+        self.unified.import_profile(name, data, inherit=base)
+        self._notify_change()
+
+    def delete_profile(self, name: str) -> None:
+        self.unified.remove_profile(name)
+        self._notify_change()
+
+    def rename_profile(self, current_name: str, new_name: str) -> None:
+        self.unified.rename_profile(current_name, new_name)
+        self._notify_change()
+
+    def export_profile(self, name: Optional[str] = None) -> Dict[str, Any]:
+        return self.unified.export_profile(name)
+
+    def import_profile(self, name: str, data: Dict[str, Any], inherit: str = "default") -> None:
+        self.unified.import_profile(name, data, inherit)
+        self._notify_change()
+
+    def export_profile_as_toml(self, name: Optional[str] = None) -> str:
+        profile_payload = {"profile": self.unified.export_profile(name)}
+        return _toml_dumps(profile_payload)
+
+    def import_profile_from_toml(self, name: str, content: str, inherit: str = "default") -> None:
+        try:
+            data = tomllib.loads(content)
+        except (tomllib.TOMLDecodeError, AttributeError) as exc:
+            raise ConfigValidationError(f"Invalid TOML content: {exc}") from exc
+        profile_data = data.get("profile", data)
+        if not isinstance(profile_data, dict):
+            raise ConfigValidationError("Profile import payload must be a table")
+        self.unified.import_profile(name, profile_data, inherit)
+        self._notify_change()
+
+    def set_value(self, path: str, value: Any, profile: Optional[str] = None) -> None:
+        target_profile = profile or self.get_active_profile()
+        profile_kw = None if target_profile == "default" else target_profile
+        self.unified.set_value(path, value, profile=profile_kw)
+        self._notify_change()
+
+    def update_list(
+        self, path: str, values: Iterable[str], action: str = "add", profile: Optional[str] = None
+    ) -> None:
+        target_profile = profile or self.get_active_profile()
+        profile_kw = None if target_profile == "default" else target_profile
+        self.unified.update_list(path, values, action=action, profile=profile_kw)
         self._notify_change()
 
     def validate_configuration(self) -> bool:

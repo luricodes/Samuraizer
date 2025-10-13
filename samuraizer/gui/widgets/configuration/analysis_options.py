@@ -15,6 +15,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QSettings, Qt
 
+from samuraizer.config.config_manager import ConfigurationManager
+
 from ..github_integration.repository_selection import RepositorySelectionWidget
 from .analysis_settings.analysis_configuration import AnalysisConfigurationWidget
 from .analysis_settings.threading_options import ThreadingOptionsWidget
@@ -65,6 +67,7 @@ class AnalysisOptionsWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings = QSettings()
+        self.config_manager = ConfigurationManager()
         self.initUI()
         self.loadSettings()
 
@@ -189,22 +192,23 @@ class AnalysisOptionsWidget(QWidget):
             if last_repo:
                 self.repository_widget.set_repository_path(last_repo)
 
-            # Load other settings with defaults
-            self.analysis_config_widget.max_size.setValue(
-                int(self.settings.value("analysis/max_file_size", 50))
-            )
-            self.analysis_config_widget.include_binary.setChecked(
-                self.settings.value("analysis/include_binary", False, type=bool)
-            )
-            self.analysis_config_widget.follow_symlinks.setChecked(
-                self.settings.value("analysis/follow_symlinks", False, type=bool)
-            )
-            self.analysis_config_widget.encoding.setCurrentText(
-                self.settings.value("analysis/encoding", "auto")
-            )
-            self.threading_options_widget.thread_count.setValue(
-                int(self.settings.value("analysis/thread_count", 4))
-            )
+            config = self.config_manager.get_active_profile_config()
+            analysis_cfg = config.get("analysis", {})
+
+            max_file_size = int(analysis_cfg.get("max_file_size_mb", 50))
+            self.analysis_config_widget.max_size.setValue(max_file_size)
+
+            include_binary = bool(analysis_cfg.get("include_binary", False))
+            self.analysis_config_widget.include_binary.setChecked(include_binary)
+
+            follow_symlinks = bool(analysis_cfg.get("follow_symlinks", False))
+            self.analysis_config_widget.follow_symlinks.setChecked(follow_symlinks)
+
+            encoding_value = analysis_cfg.get("encoding", "auto") or "auto"
+            self.analysis_config_widget.encoding.setCurrentText(str(encoding_value))
+
+            threads = analysis_cfg.get("threads") or 4
+            self.threading_options_widget.thread_count.setValue(int(threads))
 
         except Exception as e:
             logger.error(f"Error loading settings: {e}", exc_info=True)
@@ -220,6 +224,14 @@ class AnalysisOptionsWidget(QWidget):
             
             # Remove old pool_size setting if it exists
             self.settings.remove("analysis/pool_size")
+
+            # Synchronise with unified configuration
+            self.config_manager.set_value("analysis.max_file_size_mb", self.analysis_config_widget.max_size.value())
+            self.config_manager.set_value("analysis.include_binary", self.analysis_config_widget.include_binary.isChecked())
+            self.config_manager.set_value("analysis.follow_symlinks", self.analysis_config_widget.follow_symlinks.isChecked())
+            encoding = self.analysis_config_widget.encoding.currentText() or "auto"
+            self.config_manager.set_value("analysis.encoding", encoding)
+            self.config_manager.set_value("analysis.threads", self.threading_options_widget.thread_count.value())
             
         except Exception as e:
             logger.error(f"Error saving settings: {e}", exc_info=True)
