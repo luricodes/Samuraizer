@@ -44,6 +44,7 @@ class AnalyzerWorker(QObject):
         self._estimator_thread: Optional[threading.Thread] = None
         self._estimator_stop = threading.Event()
         self._cancellation = CancellationTokenSource()
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def _map_format_name(self, format_name: str) -> str:
         """Map GUI format names to OutputFactory format keys"""
@@ -147,28 +148,49 @@ class AnalyzerWorker(QObject):
     def _update_total_estimate(self, total: int) -> None:
         """Update the estimated total file count and emit progress."""
 
-        if total <= self.total_files:
-            return
+        def _apply(pending_total: int) -> None:
+            if pending_total <= self.total_files:
+                return
 
-        self.total_files = total
-        self.progress.emit(self.processed_files, self.total_files)
+            self.total_files = pending_total
+            self.progress.emit(self.processed_files, self.total_files)
+
+        self._call_in_loop(_apply, total)
 
     def _update_progress(self, current: int, total: int):
         """Update progress and emit signals."""
-        adjusted_total = max(total, current, self.total_files)
-        self.processed_files = current
-        self.total_files = adjusted_total
-        self.progress.emit(current, adjusted_total)
-        self.fileProcessed.emit(current)
+
+        def _apply(curr: int, total_hint: int) -> None:
+            adjusted_total = max(total_hint, curr, self.total_files)
+            self.processed_files = curr
+            self.total_files = adjusted_total
+            self.progress.emit(curr, adjusted_total)
+            self.fileProcessed.emit(curr)
+
+        self._call_in_loop(_apply, current, total)
+
+    def _call_in_loop(self, callback, *args) -> None:
+        loop = self._loop
+        if loop and loop.is_running():
+            loop.call_soon_threadsafe(callback, *args)
+        else:
+            callback(*args)
+
+    def _emit_status(self, message: str) -> None:
+        self._call_in_loop(self.status.emit, message)
+
+    def _emit_error(self, message: str) -> None:
+        self._call_in_loop(self.error.emit, message)
 
     async def run(self):
         """Main worker execution method executed via asyncio."""
         results: Optional[Dict[str, Any]] = None
         try:
+            self._loop = asyncio.get_running_loop()
             self._cancellation.reset()
             self._stop_requested = False
 
-            self.status.emit("Initializing analysis...")
+            self._emit_status("Initializing analysis...")
 
             if not self._validate_config():
                 return
@@ -222,14 +244,14 @@ class AnalyzerWorker(QObject):
 
             try:
                 if use_streaming:
-                    self.status.emit("Starting streaming analysis...")
+                    self._emit_status("Starting streaming analysis...")
                     results = await asyncio.to_thread(
                         self._execute_streaming_analysis,
                         analysis_params,
                         output_config,
                     )
                 else:
-                    self.status.emit("Starting analysis...")
+                    self._emit_status("Starting analysis...")
                     results = await asyncio.to_thread(
                         self._execute_standard_analysis,
                         analysis_params,
@@ -243,16 +265,16 @@ class AnalyzerWorker(QObject):
             if self._stop_requested:
                 progress_percent = int((self.processed_files / self.total_files) * 100) if self.total_files > 0 else 0
                 status_msg = f"Analysis stopped at {progress_percent}% ({self.processed_files} of {self.total_files} files)"
-                self.status.emit(status_msg)
+                self._emit_status(status_msg)
                 results = self._finalize_stop_summary(results)
             else:
-                self.status.emit("Analysis completed")
+                self._emit_status("Analysis completed")
 
             if results is None:
                 results = {}
 
             if not cache_disabled:
-                self.status.emit("Checking cache size...")
+                self._emit_status("Checking cache size...")
                 cache_path_setting = settings.value("settings/cache_path", "")
                 if not cache_path_setting:
                     cache_path_setting = str(Path.cwd() / ".cache")
@@ -266,14 +288,15 @@ class AnalyzerWorker(QObject):
             self.finished.emit(results)
 
         except asyncio.CancelledError:
-            self.status.emit("Analysis cancelled by user")
+            self._emit_status("Analysis cancelled by user")
             results = self._finalize_stop_summary(results)
             self.finished.emit(results)
         except Exception as e:
             logger.error(f"Worker initialization error: {e}", exc_info=True)
-            self.error.emit(f"Failed to initialize analysis: {str(e)}")
+            self._emit_error(f"Failed to initialize analysis: {str(e)}")
         finally:
             self._stop_file_estimator()
+            self._loop = None
 
     def _execute_standard_analysis(
         self,
@@ -367,12 +390,12 @@ class AnalyzerWorker(QObject):
             return True
             
         except Exception as e:
-            self.error.emit(f"Configuration error: {str(e)}")
+            self._emit_error(f"Configuration error: {str(e)}")
             return False
 
     def _run_standard_analysis(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run analysis in standard mode"""
-        self.status.emit("Analyzing repository structure...")
+        self._emit_status("Analyzing repository structure...")
         
         try:
             # Create a progress callback
@@ -409,7 +432,7 @@ class AnalyzerWorker(QObject):
 
     def _run_streaming_analysis(self, params: Dict[str, Any]) -> tuple[Generator[Dict[str, Any], None, None], Dict[str, Any]]:
         """Run analysis in streaming mode"""
-        self.status.emit("Running streaming analysis...")
+        self._emit_status("Running streaming analysis...")
 
         root_dir: Optional[Path] = params.get('root_dir')
         file_count = 0
@@ -457,7 +480,7 @@ class AnalyzerWorker(QObject):
                             now = time.monotonic()
                             if now - last_status_update >= 0.5:
                                 display_name = filename or (parent if parent else (root_dir.name if isinstance(root_dir, Path) else ""))
-                                self.status.emit(
+                                self._emit_status(
                                     f"Processed {included_files} files (latest: {display_name})"
                                 )
                                 last_status_update = now
@@ -509,7 +532,7 @@ class AnalyzerWorker(QObject):
             if not output_path:
                 return
                 
-            self.status.emit(f"Writing output in {output_format} format...")
+            self._emit_status(f"Writing output in {output_format} format...")
             
             # Create formatter configuration
             formatter_config = {
@@ -557,11 +580,11 @@ class AnalyzerWorker(QObject):
             # Write output
             output_func(results, output_path)
             
-            self.status.emit(f"Results written to {output_path}")
+            self._emit_status(f"Results written to {output_path}")
             
         except Exception as e:
             logger.error(f"Error writing output: {e}", exc_info=True)
-            self.error.emit(f"Failed to write output: {str(e)}")
+            self._emit_error(f"Failed to write output: {str(e)}")
 
     def stop(self):
         """Stop the analysis"""
