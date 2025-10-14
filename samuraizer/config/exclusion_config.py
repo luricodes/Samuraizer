@@ -1,7 +1,7 @@
 # samuraizer/config/exclusion_config.py
 
-"""Backwards compatibility shim for legacy imports."""
+"""Backwards compatibility proxy exposing :class:`ExclusionConfig`."""
 
-from .config_manager import ExclusionConfig
+from .facade import ExclusionConfig
 
 __all__ = ["ExclusionConfig"]

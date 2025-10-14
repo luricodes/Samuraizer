@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from samuraizer.config.config_manager import ConfigError, ConfigValidationError
+from samuraizer.config import ConfigError, ConfigValidationError
 from ..base import BaseSettingsGroup
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ from typing import Optional
 from PyQt6.QtCore import QSettings, QObject
 from PyQt6.QtWidgets import QGroupBox, QWidget
 
-from samuraizer.config.config_manager import ConfigurationManager
+from samuraizer.config import ConfigurationManager
 
 logger = logging.getLogger(__name__)
 

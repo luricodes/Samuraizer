@@ -7,6 +7,7 @@ from .events import ConfigEvent, ConfigEventType
 
 logger = logging.getLogger(__name__)
 
+
 class ConfigurationListener(ABC):
     """Base class for configuration change listeners"""
 
@@ -32,7 +33,7 @@ class ConfigurationListener(ABC):
     @abstractmethod
     def _process_event(self, event: ConfigEvent) -> None:
         """Process a configuration event.
-        
+
         Must be implemented by subclasses to handle specific event types.
         """
         pass

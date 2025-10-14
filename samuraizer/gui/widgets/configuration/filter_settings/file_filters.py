@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from samuraizer.config.config_manager import ConfigurationManager
+from samuraizer.config import ConfigurationManager
 from .filter_config_listener import FilterConfigListener
 
 logger = logging.getLogger(__name__)

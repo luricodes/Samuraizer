@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QSettings, Qt
 import qdarktheme
 
-from samuraizer.config.config_manager import ConfigurationManager
+from samuraizer.config import ConfigurationManager
 
 logger = logging.getLogger(__name__)
 

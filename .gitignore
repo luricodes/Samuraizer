@@ -95,3 +95,5 @@ tests/test_output.py
 tests/test_processing.py
 tests/test_traversal.py
 repo_analyzer/tests/
+!tests/
+!tests/test_config_refactor.py

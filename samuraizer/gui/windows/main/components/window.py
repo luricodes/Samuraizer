@@ -26,7 +26,7 @@ from samuraizer.gui.windows.main.components.analysis_dependencies import (
 )
 from samuraizer.gui.windows.main.components.ui_state import UIStateManager, AnalysisState
 from samuraizer.gui.windows.main.components.dialog_manager import DialogManager
-from samuraizer.config.config_manager import ConfigurationManager
+from samuraizer.config import ConfigurationManager
 from samuraizer.gui.app.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)

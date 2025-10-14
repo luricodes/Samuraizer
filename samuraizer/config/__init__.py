@@ -1,19 +1,21 @@
-from .config_manager import (
-    ConfigurationManager,
-    UnifiedConfigManager,
-    ExclusionConfig,
+from __future__ import annotations
+
+from .exceptions import (
     ConfigError,
     ConfigValidationError,
     ConfigMigrationError,
     ConfigIOError,
 )
+from .unified import UnifiedConfigManager, ProfileResolutionResult
+from .facade import ConfigurationManager, ExclusionConfig
 
 __all__ = [
-    "ConfigurationManager",
     "UnifiedConfigManager",
+    "ConfigurationManager",
     "ExclusionConfig",
     "ConfigError",
     "ConfigValidationError",
     "ConfigMigrationError",
     "ConfigIOError",
+    "ProfileResolutionResult",
 ]

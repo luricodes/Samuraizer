@@ -6,7 +6,7 @@ from typing import Dict, Iterable, Optional, Protocol, runtime_checkable, Sequen
 
 from PyQt6.QtWidgets import QMessageBox
 
-from samuraizer.config.config_manager import ConfigurationManager
+from samuraizer.config import ConfigurationManager
 
 
 class RepositoryValidationError(Exception):

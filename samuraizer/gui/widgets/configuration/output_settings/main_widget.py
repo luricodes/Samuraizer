@@ -13,7 +13,7 @@ from .output_file_group import OutputFileGroup
 from .format_selection_group import FormatSelectionGroup
 from .streaming_options_group import StreamingOptionsGroup
 from .additional_options_group import AdditionalOptionsGroup
-from samuraizer.config.config_manager import ConfigurationManager
+from samuraizer.config import ConfigurationManager
 
 logger = logging.getLogger(__name__)
 

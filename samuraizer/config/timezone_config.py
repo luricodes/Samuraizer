@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from .config_manager import ConfigurationManager
+from . import ConfigurationManager
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,9 @@ class TimezoneConfigManager:
         except ZoneInfoNotFoundError:
             return False
 
-    def _coerce_timezone(self, tz_name: Optional[str], *, log: bool = False) -> Optional[str]:
+    def _coerce_timezone(
+        self, tz_name: Optional[str], *, log: bool = False
+    ) -> Optional[str]:
         if not tz_name:
             return None
         tz_clean = tz_name.strip()

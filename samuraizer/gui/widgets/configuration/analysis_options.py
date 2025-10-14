@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QSettings, Qt
 
-from samuraizer.config.config_manager import ConfigurationManager
+from samuraizer.config import ConfigurationManager
 
 from ..github_integration.repository_selection import RepositorySelectionWidget
 from .analysis_settings.analysis_configuration import AnalysisConfigurationWidget
