@@ -1420,10 +1420,29 @@ class ConfigurationManager(Generic[WidgetType]):
         if not required_keys.issubset(configuration):
             raise ConfigValidationError("Missing required configuration keys from widget")
 
-        self.unified.set_value("exclusions.folders.exclude", list(configuration["excluded_folders"]))
-        self.unified.set_value("exclusions.files.exclude", list(configuration["excluded_files"]))
-        self.unified.set_value("exclusions.patterns.exclude", list(configuration["exclude_patterns"]))
-        self.unified.set_value("exclusions.image_extensions.include", list(configuration["image_extensions"]))
+        active_profile = self.get_active_profile()
+        profile_kw = None if active_profile == "default" else active_profile
+
+        self.unified.set_value(
+            "exclusions.folders.exclude",
+            list(configuration["excluded_folders"]),
+            profile=profile_kw,
+        )
+        self.unified.set_value(
+            "exclusions.files.exclude",
+            list(configuration["excluded_files"]),
+            profile=profile_kw,
+        )
+        self.unified.set_value(
+            "exclusions.patterns.exclude",
+            list(configuration["exclude_patterns"]),
+            profile=profile_kw,
+        )
+        self.unified.set_value(
+            "exclusions.image_extensions.include",
+            list(configuration["image_extensions"]),
+            profile=profile_kw,
+        )
         self._notify_change()
 
     def reset_to_defaults(self) -> None:
