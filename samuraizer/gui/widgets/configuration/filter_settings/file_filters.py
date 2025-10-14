@@ -342,6 +342,9 @@ class FileFiltersWidget(QWidget):
         super().__init__(parent)
         self.config_manager = ConfigurationManager()
         self.config_listener = FilterConfigListener(self)
+        self._syncing_config = False
+        self.config_manager.add_change_listener(self._handle_config_change)
+        self.destroyed.connect(self._on_destroyed)
         self._setup_ui()
         self.load_settings()
 
@@ -489,6 +492,9 @@ class FileFiltersWidget(QWidget):
     # ------------------------------------------------------------------
     def load_settings(self) -> None:
         """Load settings from configuration manager."""
+        if self._syncing_config:
+            return
+        self._syncing_config = True
         try:
             excluded_folders = self.config_manager.exclusion_config.get_excluded_folders()
             excluded_files = self.config_manager.exclusion_config.get_excluded_files()
@@ -507,10 +513,15 @@ class FileFiltersWidget(QWidget):
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error("Error loading filter settings: %s", exc)
             self.show_error("Settings Error", f"Failed to load settings: {exc}")
+        finally:
+            self._syncing_config = False
 
     # ------------------------------------------------------------------
     def save_settings(self) -> None:
         """Save current settings through configuration manager."""
+        if self._syncing_config:
+            return
+        self._syncing_config = True
         try:
             config_snapshot = self.get_configuration()
             self.config_manager.save_gui_filters(self)
@@ -522,6 +533,8 @@ class FileFiltersWidget(QWidget):
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error("Error saving filter settings: %s", exc)
             self.show_error("Save Error", f"Failed to save settings: {exc}")
+        finally:
+            self._syncing_config = False
 
     # ------------------------------------------------------------------
     def reset_to_defaults(self) -> None:
@@ -554,6 +567,16 @@ class FileFiltersWidget(QWidget):
             "exclude_patterns": self.patterns_list.get_patterns(),
             "image_extensions": list(self.image_list.get_items()),
         }
+
+    # ------------------------------------------------------------------
+    def _handle_config_change(self) -> None:
+        self.load_settings()
+
+    def _on_destroyed(self, _obj=None) -> None:
+        try:
+            self.config_manager.remove_change_listener(self._handle_config_change)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Error detaching filter listener: %s", exc)
 
     # ------------------------------------------------------------------
     def show_error(self, title: str, message: str) -> None:

@@ -27,10 +27,11 @@ class ThemeManager:
         return settings.value("theme", "dark", str)
     
     @staticmethod
-    def save_theme(theme: str) -> None:
+    def save_theme(theme: str, *, persist_config: bool = True) -> None:
         """Save the current theme to settings."""
         try:
-            ConfigurationManager().set_value("theme.name", theme)
+            if persist_config:
+                ConfigurationManager().set_value("theme.name", theme)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Unable to persist theme to configuration: %s", exc)
         settings = QSettings()
@@ -38,7 +39,7 @@ class ThemeManager:
         settings.sync()
     
     @classmethod
-    def apply_theme(cls, app: QApplication, theme: str = "dark") -> None:
+    def apply_theme(cls, app: QApplication, theme: str = "dark", *, persist: bool = True) -> None:
         """Apply the theme to the application.
         
         Args:
@@ -47,7 +48,7 @@ class ThemeManager:
         """
         try:
             # Save the theme preference
-            cls.save_theme(theme)
+            cls.save_theme(theme, persist_config=persist)
             
             # Define colors based on theme
             if theme == "dark":

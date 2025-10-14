@@ -2,6 +2,7 @@
 import asyncio
 import sys
 import logging
+from typing import Optional
 from PyQt6.QtWidgets import QApplication
 from qasync import QEventLoop
 from .theme_manager import ThemeManager
@@ -54,8 +55,8 @@ def run_application(window_class) -> None:
         IconsManager.set_window_icon(window)
         
         # Set up theme toggle function
-        def theme_toggle():
-            ThemeManager.toggle_theme(app, window)
+        def theme_toggle(theme: Optional[str] = None) -> None:
+            ThemeManager.toggle_theme(app, window, theme)
         
         # Assign the theme toggle function to the window
         window.toggle_theme = theme_toggle

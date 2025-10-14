@@ -1,6 +1,6 @@
 from pathlib import Path
 import logging
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox, QApplication
 from PyQt6.QtCore import QSize, QSettings
 from samuraizer.backend.cache.connection_pool import (
     close_all_connections,
@@ -27,6 +27,7 @@ from samuraizer.gui.windows.main.components.analysis_dependencies import (
 from samuraizer.gui.windows.main.components.ui_state import UIStateManager, AnalysisState
 from samuraizer.gui.windows.main.components.dialog_manager import DialogManager
 from samuraizer.config.config_manager import ConfigurationManager
+from samuraizer.gui.app.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,9 @@ class MainWindow(BaseWindow):
         
         # Initialize toggle_theme as a no-op until it's properly set
         self.toggle_theme = lambda theme=None: None
+        self._config_manager = ConfigurationManager()
+        self._applied_theme = ThemeManager.get_saved_theme()
+        self._config_manager.add_change_listener(self._handle_config_change)
 
         # Setup UI components in the correct order
         self.setup_ui()
@@ -198,6 +202,10 @@ class MainWindow(BaseWindow):
                 
             # Clean up ConfigurationManager
             try:
+                try:
+                    self._config_manager.remove_change_listener(self._handle_config_change)
+                except Exception as exc:
+                    logger.debug("Unable to detach config listener during close: %s", exc)
                 ConfigurationManager().cleanup()
                 logger.info("Configuration manager cleaned up successfully")
             except Exception as e:
@@ -213,3 +221,27 @@ class MainWindow(BaseWindow):
             logger.error(f"Error during window closure: {e}", exc_info=True)
             # Ensure the window closes even if there's an error
             event.accept()
+
+    # ------------------------------------------------------------------
+    # Configuration synchronisation
+    # ------------------------------------------------------------------
+
+    def _handle_config_change(self) -> None:
+        self._sync_theme_from_config()
+
+    def _sync_theme_from_config(self) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        try:
+            theme = ThemeManager.get_saved_theme()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Unable to read theme from configuration: %s", exc)
+            return
+        if not theme or theme == self._applied_theme:
+            return
+        try:
+            ThemeManager.apply_theme(app, theme, persist=False)
+            self._applied_theme = theme
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Failed to apply theme from configuration: %s", exc)

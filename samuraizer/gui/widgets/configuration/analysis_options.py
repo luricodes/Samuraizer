@@ -68,6 +68,9 @@ class AnalysisOptionsWidget(QWidget):
         super().__init__(parent)
         self.settings = QSettings()
         self.config_manager = ConfigurationManager()
+        self._syncing_config = False
+        self.config_manager.add_change_listener(self._handle_config_change)
+        self.destroyed.connect(self._on_destroyed)
         self.initUI()
         self.loadSettings()
 
@@ -191,37 +194,22 @@ class AnalysisOptionsWidget(QWidget):
             last_repo = self.settings.value("analysis/last_repository", "")
             if last_repo:
                 self.repository_widget.set_repository_path(last_repo)
-
-            config = self.config_manager.get_active_profile_config()
-            analysis_cfg = config.get("analysis", {})
-
-            max_file_size = int(analysis_cfg.get("max_file_size_mb", 50))
-            self.analysis_config_widget.max_size.setValue(max_file_size)
-
-            include_binary = bool(analysis_cfg.get("include_binary", False))
-            self.analysis_config_widget.include_binary.setChecked(include_binary)
-
-            follow_symlinks = bool(analysis_cfg.get("follow_symlinks", False))
-            self.analysis_config_widget.follow_symlinks.setChecked(follow_symlinks)
-
-            encoding_value = analysis_cfg.get("encoding", "auto") or "auto"
-            self.analysis_config_widget.encoding.setCurrentText(str(encoding_value))
-
-            threads = analysis_cfg.get("threads") or 4
-            self.threading_options_widget.thread_count.setValue(int(threads))
-
         except Exception as e:
             logger.error(f"Error loading settings: {e}", exc_info=True)
+        self._apply_profile_settings()
 
     def saveSettings(self):
         """Save current settings."""
+        if self._syncing_config:
+            return
+        self._syncing_config = True
         try:
             self.settings.setValue("analysis/max_file_size", self.analysis_config_widget.max_size.value())
             self.settings.setValue("analysis/include_binary", self.analysis_config_widget.include_binary.isChecked())
             self.settings.setValue("analysis/follow_symlinks", self.analysis_config_widget.follow_symlinks.isChecked())
             self.settings.setValue("analysis/encoding", self.analysis_config_widget.encoding.currentText())
             self.settings.setValue("analysis/thread_count", self.threading_options_widget.thread_count.value())
-            
+
             # Remove old pool_size setting if it exists
             self.settings.remove("analysis/pool_size")
 
@@ -232,9 +220,11 @@ class AnalysisOptionsWidget(QWidget):
             encoding = self.analysis_config_widget.encoding.currentText() or "auto"
             self.config_manager.set_value("analysis.encoding", encoding)
             self.config_manager.set_value("analysis.threads", self.threading_options_widget.thread_count.value())
-            
+
         except Exception as e:
             logger.error(f"Error saving settings: {e}", exc_info=True)
+        finally:
+            self._syncing_config = False
 
     def validateInputs(self) -> bool:
         """Validate the analysis options."""
@@ -255,3 +245,56 @@ class AnalysisOptionsWidget(QWidget):
             'encoding': None if self.analysis_config_widget.encoding.currentText() == "auto" else self.analysis_config_widget.encoding.currentText(),
             'thread_count': self.threading_options_widget.thread_count.value(),
         }
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _apply_profile_settings(self) -> None:
+        if self._syncing_config:
+            return
+        self._syncing_config = True
+        try:
+            config = self.config_manager.get_active_profile_config()
+            analysis_cfg = config.get("analysis", {})
+
+            max_size_widget = self.analysis_config_widget.max_size
+            max_size_widget.blockSignals(True)
+            max_size_widget.setValue(int(analysis_cfg.get("max_file_size_mb", 50) or 50))
+            max_size_widget.blockSignals(False)
+
+            include_binary_widget = self.analysis_config_widget.include_binary
+            include_binary_widget.blockSignals(True)
+            include_binary_widget.setChecked(bool(analysis_cfg.get("include_binary", False)))
+            include_binary_widget.blockSignals(False)
+
+            follow_symlinks_widget = self.analysis_config_widget.follow_symlinks
+            follow_symlinks_widget.blockSignals(True)
+            follow_symlinks_widget.setChecked(bool(analysis_cfg.get("follow_symlinks", False)))
+            follow_symlinks_widget.blockSignals(False)
+
+            encoding_value = str(analysis_cfg.get("encoding", "auto") or "auto")
+            encoding_widget = self.analysis_config_widget.encoding
+            encoding_widget.blockSignals(True)
+            encoding_widget.setCurrentText(encoding_value)
+            encoding_widget.blockSignals(False)
+
+            threads_value = analysis_cfg.get("threads") or 4
+            threads_widget = self.threading_options_widget.thread_count
+            threads_widget.blockSignals(True)
+            threads_widget.setValue(int(threads_value))
+            threads_widget.blockSignals(False)
+
+        except Exception as exc:
+            logger.error("Error applying profile settings: %s", exc, exc_info=True)
+        finally:
+            self._syncing_config = False
+
+    def _handle_config_change(self) -> None:
+        self._apply_profile_settings()
+
+    def _on_destroyed(self, _obj=None) -> None:
+        try:
+            self.config_manager.remove_change_listener(self._handle_config_change)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Error detaching analysis options listener: %s", exc)

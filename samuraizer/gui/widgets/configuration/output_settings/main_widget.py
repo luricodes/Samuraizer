@@ -2,6 +2,7 @@
 
 import os
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox
@@ -12,6 +13,7 @@ from .output_file_group import OutputFileGroup
 from .format_selection_group import FormatSelectionGroup
 from .streaming_options_group import StreamingOptionsGroup
 from .additional_options_group import AdditionalOptionsGroup
+from samuraizer.config.config_manager import ConfigurationManager
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +28,27 @@ class OutputOptionsWidget(QWidget):
     # Define formats that support compression
     _compression_formats = {"MESSAGEPACK"}
 
+    _FORMAT_LABELS = {
+        "json": "JSON",
+        "yaml": "YAML",
+        "xml": "XML",
+        "jsonl": "JSONL",
+        "dot": "DOT",
+        "csv": "CSV",
+        "s-expression": "S-Expression",
+        "sexp": "S-Expression",
+        "messagepack": "MessagePack",
+        "msgpack": "MessagePack",
+    }
+
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.config_manager = ConfigurationManager()
         self.settings_manager = SettingsManager()
         self._initializing: bool = True
+        self._config_sync_lock: bool = False
+        self.config_manager.add_change_listener(self._handle_config_change)
+        self.destroyed.connect(self._on_destroyed)
         self.initUI()
         self.loadSettings()
         self._initializing = False
@@ -109,7 +128,7 @@ class OutputOptionsWidget(QWidget):
         if not supports_compression:
             self.additional_options_group.use_compression.setChecked(False)
 
-        if self._initializing:
+        if self._initializing or self._config_sync_lock:
             return
 
         self.emit_configuration_changed()
@@ -120,7 +139,7 @@ class OutputOptionsWidget(QWidget):
         if self._initializing:
             return
 
-        if is_enabled and not self.is_streaming_supported():
+        if bool(is_enabled) and not self.is_streaming_supported():
             QMessageBox.warning(
                 self,
                 "Invalid Configuration",
@@ -129,7 +148,7 @@ class OutputOptionsWidget(QWidget):
             self.streaming_options_group.enable_streaming.setChecked(False)
             return
 
-        if self._initializing:
+        if self._config_sync_lock:
             return
 
         self.emit_configuration_changed()
@@ -137,21 +156,21 @@ class OutputOptionsWidget(QWidget):
 
     def on_output_path_changed(self, path: str):
         """Handle output path changes"""
-        if self._initializing:
+        if self._initializing or self._config_sync_lock:
             return
         self.emit_configuration_changed()
         self.saveSettings()
 
     def on_option_changed(self):
         """Handle changes to any option checkbox"""
-        if self._initializing:
+        if self._initializing or self._config_sync_lock:
             return
         self.emit_configuration_changed()
         self.saveSettings()
 
     def emit_configuration_changed(self):
         """Emit signal with current configuration"""
-        if self._initializing:
+        if self._initializing or self._config_sync_lock:
             return
         config = self.get_configuration()
         self.outputConfigChanged.emit(config)
@@ -219,9 +238,11 @@ class OutputOptionsWidget(QWidget):
 
         except Exception as e:
             logger.error(f"Error loading output settings: {e}", exc_info=True)
+        finally:
+            self._apply_profile_settings()
 
     def saveSettings(self):
-        if self._initializing:
+        if self._initializing or self._config_sync_lock:
             return
         try:
             # Only save settings if auto-save is enabled
@@ -233,6 +254,85 @@ class OutputOptionsWidget(QWidget):
                 self.output_file_group.save_settings(self.settings_manager)
         except Exception as e:
             logger.error(f"Error saving output settings: {e}", exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Profile synchronisation helpers
+    # ------------------------------------------------------------------
+    def _apply_profile_settings(self) -> None:
+        if self._config_sync_lock:
+            return
+        with self._suspend_config_sync():
+            try:
+                config = self.config_manager.get_active_profile_config()
+                analysis_cfg = config.get("analysis", {})
+                output_cfg = config.get("output", {})
+
+                format_label = self._format_label(analysis_cfg.get("default_format"))
+                if not format_label:
+                    format_label = "Choose Output Format"
+                format_combo = self.format_selection_group.format_combo
+                format_combo.blockSignals(True)
+                self.format_selection_group.set_selected_format(format_label)
+                format_combo.blockSignals(False)
+                self.on_format_changed(self.format_selection_group.get_selected_format())
+
+                streaming_checkbox = self.streaming_options_group.enable_streaming
+                desired_streaming = bool(output_cfg.get("streaming", False))
+                streaming_checkbox.blockSignals(True)
+                streaming_checkbox.setChecked(desired_streaming and streaming_checkbox.isEnabled())
+                streaming_checkbox.blockSignals(False)
+
+                include_summary_box = self.additional_options_group.include_summary
+                include_summary_box.blockSignals(True)
+                include_summary_box.setChecked(bool(analysis_cfg.get("include_summary", True)))
+                include_summary_box.blockSignals(False)
+
+                pretty_box = self.additional_options_group.pretty_print
+                pretty_box.blockSignals(True)
+                if pretty_box.isVisible():
+                    pretty_box.setChecked(bool(output_cfg.get("pretty_print", True)))
+                else:
+                    pretty_box.setChecked(False)
+                pretty_box.blockSignals(False)
+
+                compression_box = self.additional_options_group.use_compression
+                compression_box.blockSignals(True)
+                if compression_box.isVisible():
+                    compression_box.setChecked(bool(output_cfg.get("compression", False)))
+                else:
+                    compression_box.setChecked(False)
+                compression_box.blockSignals(False)
+
+            except Exception as exc:
+                logger.error("Error applying profile output settings: %s", exc, exc_info=True)
+
+        if not self._initializing:
+            self.emit_configuration_changed()
+
+    def _handle_config_change(self) -> None:
+        self._apply_profile_settings()
+
+    def _on_destroyed(self, _obj=None) -> None:
+        try:
+            self.config_manager.remove_change_listener(self._handle_config_change)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("Error detaching output settings listener: %s", exc)
+
+    @classmethod
+    def _format_label(cls, value: Optional[str]) -> str:
+        if value is None:
+            return ""
+        key = str(value).strip().lower().replace("_", "-")
+        return cls._FORMAT_LABELS.get(key, "")
+
+    @contextmanager
+    def _suspend_config_sync(self):
+        previous = self._config_sync_lock
+        self._config_sync_lock = True
+        try:
+            yield
+        finally:
+            self._config_sync_lock = previous
 
     def is_streaming_supported(self) -> bool:
         """Check if the selected format supports streaming"""
