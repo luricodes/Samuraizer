@@ -7,8 +7,10 @@ from pathlib import Path
 import fnmatch
 from PyQt6.QtCore import QObject, pyqtSignal, QSettings
 from samuraizer.backend.services.event_service.cancellation import CancellationTokenSource
-from samuraizer.backend.analysis.traversal.traversal_processor import get_directory_structure
-from samuraizer.backend.analysis.traversal.traversal_stream import get_directory_structure_stream
+from samuraizer.backend.analysis.traversal.async_traversal import (
+    get_directory_structure_async,
+    get_directory_structure_stream_async,
+)
 from samuraizer.backend.output.factory.output_factory import OutputFactory
 from samuraizer.backend.cache.cache_cleaner import check_and_vacuum_if_needed
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
@@ -44,7 +46,6 @@ class AnalyzerWorker(QObject):
         self._estimator_thread: Optional[threading.Thread] = None
         self._estimator_stop = threading.Event()
         self._cancellation = CancellationTokenSource()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def _map_format_name(self, format_name: str) -> str:
         """Map GUI format names to OutputFactory format keys"""
@@ -148,39 +149,26 @@ class AnalyzerWorker(QObject):
     def _update_total_estimate(self, total: int) -> None:
         """Update the estimated total file count and emit progress."""
 
-        def _apply(pending_total: int) -> None:
-            if pending_total <= self.total_files:
-                return
+        if total <= self.total_files:
+            return
 
-            self.total_files = pending_total
-            self.progress.emit(self.processed_files, self.total_files)
-
-        self._call_in_loop(_apply, total)
+        self.total_files = total
+        self.progress.emit(self.processed_files, self.total_files)
 
     def _update_progress(self, current: int, total: int):
         """Update progress and emit signals."""
 
-        def _apply(curr: int, total_hint: int) -> None:
-            adjusted_total = max(total_hint, curr, self.total_files)
-            self.processed_files = curr
-            self.total_files = adjusted_total
-            self.progress.emit(curr, adjusted_total)
-            self.fileProcessed.emit(curr)
-
-        self._call_in_loop(_apply, current, total)
-
-    def _call_in_loop(self, callback, *args) -> None:
-        loop = self._loop
-        if loop and loop.is_running():
-            loop.call_soon_threadsafe(callback, *args)
-        else:
-            callback(*args)
+        adjusted_total = max(total, current, self.total_files)
+        self.processed_files = current
+        self.total_files = adjusted_total
+        self.progress.emit(current, adjusted_total)
+        self.fileProcessed.emit(current)
 
     def _emit_status(self, message: str) -> None:
-        self._call_in_loop(self.status.emit, message)
+        self.status.emit(message)
 
     def _emit_error(self, message: str) -> None:
-        self._call_in_loop(self.error.emit, message)
+        self.error.emit(message)
 
     async def run(self):
         """Main worker execution method executed via asyncio."""
@@ -244,19 +232,9 @@ class AnalyzerWorker(QObject):
 
             try:
                 if use_streaming:
-                    self._emit_status("Starting streaming analysis...")
-                    results = await asyncio.to_thread(
-                        self._execute_streaming_analysis,
-                        analysis_params,
-                        output_config,
-                    )
+                    results = await self._run_streaming_analysis_async(analysis_params, output_config)
                 else:
-                    self._emit_status("Starting analysis...")
-                    results = await asyncio.to_thread(
-                        self._execute_standard_analysis,
-                        analysis_params,
-                        output_config,
-                    )
+                    results = await self._run_standard_analysis_async(analysis_params, output_config)
             except asyncio.CancelledError:
                 logger.info("Analysis task cancelled")
                 self._stop_requested = True
@@ -286,72 +264,19 @@ class AnalyzerWorker(QObject):
                 )
 
             self.finished.emit(results)
+            return results
 
         except asyncio.CancelledError:
             self._emit_status("Analysis cancelled by user")
             results = self._finalize_stop_summary(results)
             self.finished.emit(results)
+            raise
         except Exception as e:
             logger.error(f"Worker initialization error: {e}", exc_info=True)
             self._emit_error(f"Failed to initialize analysis: {str(e)}")
+            raise
         finally:
             self._stop_file_estimator()
-            self._loop = None
-
-    def _execute_standard_analysis(
-        self,
-        params: Dict[str, Any],
-        output_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Run standard analysis and handle optional output writing."""
-        local_params = dict(params)
-        results = self._run_standard_analysis(local_params)
-
-        if self._stop_requested:
-            return results
-
-        output_path = output_config.get('output_path')
-        if output_path:
-            payload = results
-            if not output_config.get('include_summary', True) and isinstance(results, dict):
-                payload = {"structure": results.get("structure", {})}
-            self._write_output(payload, output_config)
-
-        return results
-
-    def _execute_streaming_analysis(
-        self,
-        params: Dict[str, Any],
-        output_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Run streaming analysis and handle optional streaming output."""
-        local_params = dict(params)
-        generator, results = self._run_streaming_analysis(local_params)
-
-        if self._stop_requested:
-            return results
-
-        output_path = output_config.get('output_path')
-        if output_path:
-            stream = generator
-            if not output_config.get('include_summary', True):
-                stream = (entry for entry in stream if "summary" not in entry)
-            self._write_output(stream, output_config)
-
-        return results
-
-    def _post_analysis_cache_maintenance(self, cache_path: str, thread_count: int) -> None:
-        """Vacuum cache database and refresh connection pool."""
-        try:
-            db_path = Path(cache_path) / CACHE_DB_FILE
-            check_and_vacuum_if_needed(db_path)
-            initialize_connection_pool(
-                str(db_path),
-                thread_count,
-                force_disable_cache=is_cache_disabled(),
-            )
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.warning("Cache maintenance failed: %s", exc, exc_info=True)
 
     def _finalize_stop_summary(self, results: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Ensure stop metadata is captured in the summary."""
@@ -393,198 +318,189 @@ class AnalyzerWorker(QObject):
             self._emit_error(f"Configuration error: {str(e)}")
             return False
 
-    def _run_standard_analysis(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Run analysis in standard mode"""
+    async def _run_standard_analysis_async(
+        self,
+        params: Dict[str, Any],
+        output_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run analysis in standard mode using asynchronous helpers."""
         self._emit_status("Analyzing repository structure...")
-        
-        try:
-            # Create a progress callback
-            def progress_callback(current: int):
-                estimated_total = max(self.total_files, current)
-                self._update_progress(current, estimated_total)
-            
-            # Add progress callback to params
-            params['progress_callback'] = progress_callback
-            params['cancellation_token'] = self._cancellation.token
-            
-            structure, summary = get_directory_structure(**params)
-            
-            # Ensure final progress is updated
-            if not self._stop_requested:
-                final_count = summary.get('included_files', 0)
-                estimated_total = max(self.total_files, final_count)
-                self._update_progress(final_count, estimated_total)
-            
-            return {
-                "structure": structure,
-                "summary": {
-                    **summary,
-                    "estimated_total_files": max(
-                        self.total_files,
-                        summary.get('total_files', summary.get('included_files', 0))
-                    )
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in standard analysis: {e}", exc_info=True)
-            raise
 
-    def _run_streaming_analysis(self, params: Dict[str, Any]) -> tuple[Generator[Dict[str, Any], None, None], Dict[str, Any]]:
-        """Run analysis in streaming mode"""
+        def progress_callback(current: int) -> None:
+            estimated_total = max(self.total_files, current)
+            self._update_progress(current, estimated_total)
+
+        local_params = dict(params)
+        local_params['progress_callback'] = progress_callback
+        local_params['cancellation_token'] = self._cancellation.token
+
+        structure, summary = await get_directory_structure_async(**local_params)
+
+        if not self._stop_requested:
+            final_count = summary.get('included_files', 0)
+            estimated_total = max(self.total_files, final_count)
+            self._update_progress(final_count, estimated_total)
+
+        results = {
+            "structure": structure,
+            "summary": {
+                **summary,
+                "estimated_total_files": max(
+                    self.total_files,
+                    summary.get('total_files', summary.get('included_files', 0))
+                )
+            }
+        }
+
+        output_format = self._map_format_name(output_config.get('format', 'json'))
+        output_path = output_config.get('output_path')
+        if not self._stop_requested and output_path:
+            payload: Dict[str, Any] | Dict[str, Any] = results
+            if not output_config.get('include_summary', True):
+                payload = {"structure": results.get("structure", {})}
+            self._emit_status(f"Writing output in {output_format} format...")
+            await asyncio.to_thread(self._write_output_sync, payload, output_config)
+            self._emit_status(f"Results written to {output_path}")
+
+        return results
+
+    async def _run_streaming_analysis_async(
+        self,
+        params: Dict[str, Any],
+        output_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run analysis in streaming mode without blocking the event loop."""
         self._emit_status("Running streaming analysis...")
 
         root_dir: Optional[Path] = params.get('root_dir')
-        file_count = 0
-        structure = {}
-        summary = {}
-        failed_files = []
+        structure: Dict[str, Any] = {}
+        summary: Dict[str, Any] = {}
+        failed_files: List[Dict[str, str]] = []
         included_files = 0
-        excluded_files = 0
         last_status_update = 0.0
+        summary_received = False
 
-        try:
-            # Create base generator
-            params['cancellation_token'] = self._cancellation.token
-            base_generator = get_directory_structure_stream(**params)
-            
-            # Create a new generator that collects results while yielding
-            def collecting_generator():
-                nonlocal file_count, structure, summary, failed_files, included_files, excluded_files, last_status_update
-                
-                for entry in base_generator:
-                    if self._stop_requested:
-                        break
+        local_params = dict(params)
+        local_params['cancellation_token'] = self._cancellation.token
 
-                    if "summary" in entry:
-                        # Store the summary
-                        summary.update(entry["summary"])
-                    else:
-                        # Update structure
-                        parent = entry.get("parent", "")
-                        filename = entry.get("filename", "")
-                        info = entry.get("info", {})
-                        
-                        # Track file statistics
-                        if info.get("type") == "error":
-                            failed_files.append({
-                                "file": str(Path(parent) / filename),
-                                "error": info.get("content", "Unknown error")
-                            })
-                        else:
-                            included_files += 1
-                            # Update progress with actual count and total
-                            estimated_total = max(self.total_files, included_files)
-                            self._update_progress(included_files, estimated_total)
+        stream = get_directory_structure_stream_async(**local_params)
 
-                            now = time.monotonic()
-                            if now - last_status_update >= 0.5:
-                                display_name = filename or (parent if parent else (root_dir.name if isinstance(root_dir, Path) else ""))
-                                self._emit_status(
-                                    f"Processed {included_files} files (latest: {display_name})"
-                                )
-                                last_status_update = now
-                        
-                        # Build structure
-                        current = structure
-                        if parent:
-                            for part in Path(parent).parts:
-                                current = current.setdefault(part, {})
-                        current[filename] = info
-                        
-                        # Update file count
-                        file_count += 1
-                    
-                    # Always yield the entry for streaming output
-                    yield entry
-                
-                # Update final summary
-                summary.update({
-                    "total_files": included_files + excluded_files,
-                    "included_files": included_files,
-                    "excluded_files": excluded_files,
-                    "excluded_percentage": (excluded_files / (included_files + excluded_files) * 100) if (included_files + excluded_files) > 0 else 0,
-                    "failed_files": failed_files,
-                    "stopped_early": self._stop_requested,
-                    "processed_files": included_files,
-                    "estimated_total_files": max(self.total_files, included_files + excluded_files),
+        output_path = output_config.get('output_path')
+        output_format = self._map_format_name(output_config.get('format', 'json'))
+        include_summary = output_config.get('include_summary', True)
+
+        stream_entries: List[Dict[str, Any]] = [] if output_path else []
+
+        async for entry in stream:
+            if self._stop_requested:
+                break
+
+            if "summary" in entry:
+                summary.update(entry["summary"])
+                summary_received = True
+                if output_path and include_summary:
+                    stream_entries.append(entry)
+                continue
+
+            parent = entry.get("parent", "")
+            filename = entry.get("filename", "")
+            info = entry.get("info", {})
+
+            if info.get("type") == "error":
+                failed_files.append({
+                    "file": str(Path(parent) / filename),
+                    "error": info.get("content", "Unknown error"),
                 })
-            
-            # Create the generator and results dictionary
-            generator = collecting_generator()
-            results = {
-                "structure": structure,
-                "summary": summary
-            }
-            
-            return generator, results
-            
-        except Exception as e:
-            logger.error(f"Error in streaming analysis: {e}", exc_info=True)
-            raise
+            else:
+                included_files += 1
+                estimated_total = max(self.total_files, included_files)
+                self._update_progress(included_files, estimated_total)
 
-    def _write_output(self, results: Dict[str, Any] | Generator[Dict[str, Any], None, None], output_config: Dict[str, Any]):
-        """Write results to output file"""
-        try:
-            output_format = self._map_format_name(output_config.get('format', 'json'))
-            output_path = output_config.get('output_path')
-            
-            if not output_path:
-                return
-                
-            self._emit_status(f"Writing output in {output_format} format...")
-            
-            # Create formatter configuration
-            formatter_config = {
-                'pretty_print': output_config.get('pretty_print', True),
-                'use_compression': output_config.get('use_compression', False)
-            }
+                now = time.monotonic()
+                if now - last_status_update >= 0.5:
+                    display_name = filename or (
+                        parent if parent else (root_dir.name if isinstance(root_dir, Path) else "")
+                    )
+                    self._emit_status(
+                        f"Processed {included_files} files (latest: {display_name})"
+                    )
+                    last_status_update = now
 
-            # For JSONL format, ensure we're using streaming mode
-            if output_format == 'jsonl' and not isinstance(results, Generator):
-                # Convert dictionary results to a generator format
-                def dict_to_generator(data: Dict[str, Any]):
-                    structure = data.get('structure', {})
-                    
-                    def process_structure(parent: str, items: Dict[str, Any]):
-                        for name, info in items.items():
-                            if isinstance(info, dict):
-                                if 'type' in info:  # This is a file entry
-                                    yield {
-                                        'parent': parent,
-                                        'filename': name,
-                                        'info': info
-                                    }
-                                else:  # This is a directory
-                                    yield from process_structure(
-                                        str(Path(parent) / name) if parent else name,
-                                        info
-                                    )
-                    
-                    # First yield all file entries
-                    yield from process_structure('', structure)
-                    
-                    # Then yield summary if it exists
-                    if 'summary' in data:
-                        yield {'summary': data['summary']}
-                
-                results = dict_to_generator(results)
-            
-            # Get output function with configuration
-            output_func = OutputFactory.get_output(
-                output_format,
-                streaming=isinstance(results, Generator) or output_format == 'jsonl',
-                config=formatter_config
+            current = structure
+            if parent:
+                for part in Path(parent).parts:
+                    current = current.setdefault(part, {})
+            current[filename] = info
+
+            if output_path:
+                stream_entries.append(entry)
+
+        if not summary_received:
+            summary.update({
+                "included_files": included_files,
+                "failed_files": failed_files,
+            })
+
+        summary.setdefault("included_files", included_files)
+        summary.setdefault("processed_files", included_files)
+        summary.setdefault("failed_files", failed_files)
+        summary.setdefault("excluded_files", summary.get("excluded_files", 0))
+        summary["stopped_early"] = self._stop_requested
+        summary.setdefault("total_files", summary.get("included_files", included_files))
+        summary.setdefault(
+            "estimated_total_files",
+            max(self.total_files, summary.get("total_files", included_files)),
+        )
+
+        results = {
+            "structure": structure,
+            "summary": summary,
+        }
+
+        if output_path:
+            if include_summary and not summary_received:
+                stream_entries.append({"summary": summary})
+
+            entries_for_output = (
+                stream_entries
+                if include_summary
+                else [entry for entry in stream_entries if "summary" not in entry]
             )
-            
-            # Write output
-            output_func(results, output_path)
-            
+
+            def entry_iterator() -> Generator[Dict[str, Any], None, None]:
+                for item in entries_for_output:
+                    yield item
+
+            self._emit_status(f"Writing output in {output_format} format...")
+            await asyncio.to_thread(self._write_output_sync, entry_iterator(), output_config)
             self._emit_status(f"Results written to {output_path}")
-            
-        except Exception as e:
-            logger.error(f"Error writing output: {e}", exc_info=True)
-            self._emit_error(f"Failed to write output: {str(e)}")
+
+        return results
+
+    def _write_output_sync(
+        self,
+        results: Dict[str, Any] | Generator[Dict[str, Any], None, None],
+        output_config: Dict[str, Any],
+    ) -> None:
+        """Synchronously write analysis results to disk."""
+        output_format = self._map_format_name(output_config.get('format', 'json'))
+        output_path = output_config.get('output_path')
+
+        if not output_path:
+            return
+
+        formatter_config = {
+            'pretty_print': output_config.get('pretty_print', True),
+            'use_compression': output_config.get('use_compression', False),
+        }
+
+        streaming = isinstance(results, Generator) or output_format == 'jsonl'
+        output_func = OutputFactory.get_output(
+            output_format,
+            streaming=streaming,
+            config=formatter_config,
+        )
+        output_func(results, output_path)
 
     def stop(self):
         """Stop the analysis"""

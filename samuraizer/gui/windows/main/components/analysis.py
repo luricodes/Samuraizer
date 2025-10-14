@@ -5,7 +5,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Coroutine, Dict, Optional
 
 from PyQt6.QtCore import QSettings
 
@@ -78,6 +78,11 @@ class AnalysisManager:
     def start_analysis(self) -> None:
         """Start the repository analysis."""
 
+        self._schedule_coroutine(self.start_analysis_async())
+
+    async def start_analysis_async(self) -> None:
+        """Asynchronous workflow for starting the analysis."""
+
         try:
             if not self._validate_analysis_prerequisites():
                 return
@@ -88,26 +93,45 @@ class AnalysisManager:
             self._analysis_display.set_configuration(config_payload)
             self._state_controller.set_analysis_state(AnalysisState.RUNNING)
 
-            self._setup_analysis_worker(config_payload)
+            await self._setup_analysis_worker(config_payload)
             assert self.analyzer_worker is not None
 
             self._analysis_display.start_analysis(self.analyzer_worker)
 
-            loop = asyncio.get_running_loop()
-            self.analysis_task = loop.create_task(self.analyzer_worker.run())
-            self.analysis_task.add_done_callback(self._on_analysis_task_done)
+            task = asyncio.create_task(self.analyzer_worker.run())
+            self.analysis_task = task
+
+            try:
+                results = await task
+            except asyncio.CancelledError:
+                logger.debug("Analysis task cancelled")
+                self._state_controller.set_analysis_state(AnalysisState.IDLE)
+                self._status_reporter.show_message("Analysis cancelled.")
+                await self._cleanup_previous_analysis_async()
+            except Exception as exc:
+                logger.error("Analysis task raised an exception: %s", exc, exc_info=True)
+                await self._on_analysis_error_async(str(exc))
+            else:
+                if isinstance(results, dict):
+                    await self._on_analysis_finished_async(results)
+            finally:
+                if self.analysis_task is task:
+                    self.analysis_task = None
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.error("Error starting analysis: %s", exc, exc_info=True)
-            self._message_presenter.error("Error", f"Failed to start analysis: {exc}")
-            self._state_controller.set_analysis_state(AnalysisState.ERROR)
+            await self._on_analysis_error_async(str(exc))
 
     def stop_analysis(self) -> None:
         """Stop the current analysis."""
 
+        self._schedule_coroutine(self.stop_analysis_async())
+
+    async def stop_analysis_async(self) -> None:
+        """Asynchronously stop the current analysis."""
+
         try:
             self._analysis_display.stop_analysis()
-            self._cancel_analysis_task()
-            self._cleanup_previous_analysis()
+            await self._cleanup_previous_analysis_async()
             self._state_controller.set_analysis_state(AnalysisState.IDLE)
             self._status_reporter.show_message("Analysis stopped.")
         except Exception as exc:  # pragma: no cover - defensive guard
@@ -118,7 +142,7 @@ class AnalysisManager:
     def cleanup(self) -> None:
         """Cleanup resources when closing the application."""
 
-        self._cleanup_previous_analysis()
+        self._schedule_coroutine(self._cleanup_previous_analysis_async())
 
     def _validate_analysis_prerequisites(self) -> bool:
         """Validate all prerequisites before starting analysis."""
@@ -188,41 +212,34 @@ class AnalysisManager:
             )
             return False
 
-    def _setup_analysis_worker(self, config_payload: Dict[str, object]) -> None:
-        """Set up the analysis worker and thread."""
+    def _schedule_coroutine(self, coro: Coroutine[Any, Any, Any]) -> None:
+        """Dispatch a coroutine on the running event loop or execute synchronously."""
 
         try:
-            self._cleanup_previous_analysis()
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(coro)
+        else:
+            loop.create_task(coro)
 
+    async def _setup_analysis_worker(self, config_payload: Dict[str, object]) -> None:
+        """Set up the analysis worker, ensuring previous state is cleared."""
+
+        try:
+            await self._cleanup_previous_analysis_async()
             self.analyzer_worker = AnalyzerWorker(config_payload)
-            self.analyzer_worker.finished.connect(self._on_analysis_finished)
-            self.analyzer_worker.error.connect(self._on_analysis_error)
         except Exception as exc:
             logger.error("Error setting up worker: %s", exc, exc_info=True)
             raise
 
-    def _on_analysis_task_done(self, task: asyncio.Task) -> None:
-        """Handle completion of the asyncio task backing the worker."""
-        try:
-            task.result()
-        except asyncio.CancelledError:
-            logger.debug("Analysis task cancelled")
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.error("Analysis task raised an exception: %s", exc, exc_info=True)
-        finally:
-            if task is self.analysis_task:
-                self.analysis_task = None
-
-    def _on_analysis_finished(self, results: Dict[str, object]) -> None:
+    async def _on_analysis_finished_async(self, results: Dict[str, object]) -> None:
         """Handle analysis completion."""
 
         self.results_data = results
         self._state_controller.set_analysis_state(AnalysisState.COMPLETED)
-        if self.analysis_task and self.analysis_task.done():
-            self.analysis_task = None
-        self._cleanup_previous_analysis()
+        await self._cleanup_previous_analysis_async()
 
-    def _on_analysis_error(self, error_message: str) -> None:
+    async def _on_analysis_error_async(self, error_message: str) -> None:
         """Handle analysis error."""
 
         self._message_presenter.error(
@@ -230,35 +247,44 @@ class AnalysisManager:
             f"An error occurred during analysis:\n\n{error_message}\n\nCheck the logs for more details.",
         )
         self._state_controller.set_analysis_state(AnalysisState.ERROR)
-        if self.analysis_task and self.analysis_task.done():
-            self.analysis_task = None
-        self._cleanup_previous_analysis()
+        await self._cleanup_previous_analysis_async()
 
-    def _cancel_analysis_task(self) -> None:
-        """Cancel any running analysis task."""
-        if self.analysis_task:
-            if not self.analysis_task.done():
-                self.analysis_task.cancel()
+    async def _cancel_analysis_task_async(self) -> None:
+        """Cancel any running analysis task asynchronously."""
+
+        task = self.analysis_task
+        if task is None:
+            return
+
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # pragma: no cover - defensive guard
+                logger.debug("Analysis task raised during cancellation: %s", exc, exc_info=True)
+
+        if self.analysis_task is task:
             self.analysis_task = None
 
-    def _cleanup_previous_analysis(self) -> None:
-        """Clean up previous analysis resources."""
+    async def _cleanup_previous_analysis_async(self) -> None:
+        """Clean up previous analysis resources asynchronously."""
 
         try:
-            task = self.analysis_task
-            was_running = bool(task and not task.done())
-            self._cancel_analysis_task()
+            await self._cancel_analysis_task_async()
 
             if self.analyzer_worker:
-                if was_running:
-                    try:
-                        self.analyzer_worker.stop()
-                    except Exception:
-                        logger.debug("Failed to stop analyzer worker during cleanup", exc_info=True)
+                try:
+                    self.analyzer_worker.stop()
+                except Exception:
+                    logger.debug("Failed to stop analyzer worker during cleanup", exc_info=True)
+
                 try:
                     self.analyzer_worker.deleteLater()
                 except Exception:
                     logger.debug("Analyzer worker already deleted", exc_info=True)
+
             self.analyzer_worker = None
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.error("Error cleaning up analysis: %s", exc, exc_info=True)
