@@ -21,11 +21,8 @@ from .storage import ConfigStorage
 from .timezone import TimezoneNormalizer
 from .utils import _deep_merge
 from .validation import _validator, ValidationError
-from .migration import (
-    migrate_from_legacy_files,
-    migrate_timezone_json,
-    migrate_qsettings,
-)
+from .migration import migrate_from_legacy_files, migrate_timezone_json
+from .toml_io import _toml_dumps
 
 logger = logging.getLogger(__name__)
 
@@ -309,8 +306,6 @@ class UnifiedConfigManager:
                     migrated = True
                 if migrate_timezone_json(self._raw_config):
                     migrated = True
-                if migrate_qsettings(self._raw_config):
-                    migrated = True
             except ConfigMigrationError:
                 raise
             except Exception as exc:  # pragma: no cover
@@ -394,6 +389,34 @@ class UnifiedConfigManager:
         with self._lock:
             extra = sorted(self._raw_config.get("profiles", {}).keys())
         return ["default", *extra]
+
+    def create_profile(self, name: str, inherit: Optional[str] = None) -> None:
+        base = inherit or "default"
+        data = self.export_profile(base)
+        self.import_profile(name, data, inherit=base)
+
+    def export_profile_as_toml(self, name: Optional[str] = None) -> str:
+        profile_payload = {"profile": self.export_profile(name)}
+        return _toml_dumps(profile_payload)
+
+    def import_profile_from_toml(
+        self, name: str, content: str, inherit: str = "default"
+    ) -> None:
+        try:
+            data = tomllib.loads(content)
+        except (tomllib.TOMLDecodeError, AttributeError) as exc:
+            raise ConfigValidationError(f"Invalid TOML content: {exc}") from exc
+        profile_data = data.get("profile", data)
+        if not isinstance(profile_data, dict):
+            raise ConfigValidationError("Profile import payload must be a table")
+        self.import_profile(name, profile_data, inherit=inherit)
+
+    def cleanup(self) -> None:
+        with self._lock:
+            self._change_listeners.clear()
+            self._profile_cache.clear()
+            self._initialized = False
+            type(self)._instance = None  # reset singleton for future use
 
 
 __all__ = ["UnifiedConfigManager", "ProfileResolutionResult"]

@@ -144,28 +144,25 @@ class CacheSettingsGroup(BaseSettingsGroup):
     def reset_cache_path(self) -> None:
         """Reset the cache path to default location."""
         try:
-            # Remove the cache path setting
-            self.settings.remove("settings/cache_path")
-            
             # Clear the actual path
             self.cache_path_label.clear()
             
-            # Get default path for display only
-            default_path = Path.cwd() / ".cache"
-            self.cache_path_label.setText(f"Using default: {default_path}")
-            self.config_manager.set_value("cache.path", str(default_path))
-            
-            # Force settings to sync
-            self.settings.sync()
+            # Remove explicit override so the default applies
+            self.config_manager.set_value("cache.path", None)
+
+            cache_cfg = self.config_manager.get_active_profile_config().get("cache", {})
+            default_path = cache_cfg.get("path") or str(Path.cwd() / ".cache")
+            resolved_default = Path(str(default_path)).expanduser()
+            self.cache_path_label.setText(f"Using default: {resolved_default}")
             
             # Show confirmation
             QMessageBox.information(
                 self,
                 "Cache Path Reset",
-                f"Cache path has been reset to default location:\n{default_path}"
+                f"Cache path has been reset to default location:\n{resolved_default}"
             )
-            
-            logger.warning(f"Cache path reset to default: {default_path}")
+
+            logger.warning(f"Cache path reset to default: {resolved_default}")
             logger.warning(f"Takes effect after program restart")
 
             # Update cache size display
@@ -183,10 +180,8 @@ class CacheSettingsGroup(BaseSettingsGroup):
         """Open dialog to select cache directory."""
         try:
             # Get current cache path or default to home directory
-            current_cache = self.settings.value(
-                "settings/cache_path",
-                str(Path.home())
-            )
+            cache_cfg = self.config_manager.get_active_profile_config().get("cache", {})
+            current_cache = cache_cfg.get("path") or str(Path.home())
             dir_path = QFileDialog.getExistingDirectory(
                 self,
                 "Select Cache Directory",
@@ -220,21 +215,17 @@ class CacheSettingsGroup(BaseSettingsGroup):
                 try:
                     abs_path = str(cache_path.resolve())
                     self.cache_path_label.setText(abs_path)
-                    # Save the setting immediately
-                    self.settings.setValue("settings/cache_path", abs_path)
-                    self.settings.sync()  # Force immediate sync
-                    logger.warning(f"Cache path updated and synced to: {abs_path}")
-                    logger.warning(f"Takes effect after program restart")
+                    logger.warning(f"Cache path updated: {abs_path}")
+                    logger.warning("Takes effect after program restart")
                     self.config_manager.set_value("cache.path", abs_path)
                     # Update cache size display
                     self.update_current_cache_size()
                 except Exception as e:
                     logger.error(f"Error resolving cache path: {e}")
                     # Fall back to original path if resolution fails
-                    self.cache_path_label.setText(str(cache_path))
-                    self.settings.setValue("settings/cache_path", str(cache_path))
-                    self.settings.sync()
-                    self.config_manager.set_value("cache.path", str(cache_path))
+                    fallback_path = str(cache_path)
+                    self.cache_path_label.setText(fallback_path)
+                    self.config_manager.set_value("cache.path", fallback_path)
 
         except Exception as e:
             logger.error(f"Error selecting cache path: {e}", exc_info=True)
@@ -270,10 +261,6 @@ class CacheSettingsGroup(BaseSettingsGroup):
                     self.disable_cache.blockSignals(False)
                     cache_disabled = False
             
-            # Save cache state immediately
-            self.settings.setValue("settings/disable_cache", cache_disabled)
-            self.settings.sync()
-
             # Propagate runtime cache state immediately
             set_cache_disabled(cache_disabled)
             self.config_manager.set_value("analysis.cache_enabled", not cache_disabled)
@@ -305,31 +292,15 @@ class CacheSettingsGroup(BaseSettingsGroup):
 
             self.disable_cache.blockSignals(True)
 
-            disable_cache_setting = self.settings.value("settings/disable_cache", None)
-            if disable_cache_setting is None:
-                disable_cache = not bool(analysis_cfg.get("cache_enabled", True))
-            else:
-                disable_cache = bool(disable_cache_setting)
+            disable_cache = not bool(analysis_cfg.get("cache_enabled", True))
 
-            cleanup_setting = self.settings.value("settings/cache_cleanup", None)
-            cleanup_days = (
-                int(cleanup_setting)
-                if cleanup_setting is not None
-                else int(cache_cfg.get("cleanup_days", 30))
-            )
+            cleanup_days = int(cache_cfg.get("cleanup_days", 30) or 30)
             self.cache_cleanup.setValue(cleanup_days)
 
-            size_setting = self.settings.value("settings/max_cache_size", None)
-            size_limit = (
-                int(size_setting)
-                if size_setting is not None
-                else int(cache_cfg.get("size_limit_mb", 1000))
-            )
+            size_limit = int(cache_cfg.get("size_limit_mb", 1000) or 1000)
             self.max_cache_size.setValue(size_limit)
 
-            cache_path = self.settings.value("settings/cache_path", "")
-            if not cache_path:
-                cache_path = cache_cfg.get("path") or str(Path.cwd() / ".cache")
+            cache_path = cache_cfg.get("path") or str(Path.cwd() / ".cache")
             if cache_path:
                 self.cache_path_label.setText(str(cache_path))
             else:
@@ -356,46 +327,20 @@ class CacheSettingsGroup(BaseSettingsGroup):
     def save_settings(self) -> None:
         """Save cache settings."""
         try:
-            # Save cache settings
-            self.settings.setValue(
-                "settings/disable_cache",
-                self.disable_cache.isChecked()
-            )
-            self.settings.setValue(
-                "settings/cache_cleanup",
-                self.cache_cleanup.value()
-            )
-            self.settings.setValue(
-                "settings/max_cache_size",
-                self.max_cache_size.value()
-            )
-            
-            # Save cache path if available
-            cache_path = self.cache_path_label.text()
-            if cache_path:
-                try:
-                    # Handle default path display
-                    if cache_path.startswith("Using default:"):
-                        cache_path = cache_path.replace("Using default: ", "").strip()
-                    
-                    # Ensure we save an absolute path
-                    abs_path = str(Path(cache_path).resolve())
-                    self.settings.setValue("settings/cache_path", abs_path)
-                    logger.debug(f"Cache path saved: {abs_path}")
-                except Exception as path_error:
-                    logger.error(f"Error resolving cache path: {path_error}")
-                    # Still save the original path if resolution fails
-                    self.settings.setValue("settings/cache_path", cache_path)
-                    abs_path = cache_path
-            else:
-                abs_path = ""
-
             cache_disabled = self.disable_cache.isChecked()
             self.config_manager.set_value("analysis.cache_enabled", not cache_disabled)
             self.config_manager.set_value("cache.cleanup_days", self.cache_cleanup.value())
             self.config_manager.set_value("cache.size_limit_mb", self.max_cache_size.value())
-            if cache_path:
-                self.config_manager.set_value("cache.path", abs_path)
+            cache_path_display = self.cache_path_label.text().strip()
+            if cache_path_display.startswith("Using default:") or not cache_path_display:
+                self.config_manager.set_value("cache.path", None)
+            else:
+                try:
+                    resolved_path = str(Path(cache_path_display).expanduser().resolve())
+                except Exception as path_error:
+                    logger.error("Error resolving cache path: %s", path_error)
+                    resolved_path = cache_path_display
+                self.config_manager.set_value("cache.path", resolved_path)
                 
         except Exception as e:
             logger.error(f"Error saving cache settings: {e}", exc_info=True)

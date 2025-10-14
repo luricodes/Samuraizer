@@ -12,7 +12,7 @@ from samuraizer.backend.cache.connection_pool import get_connection_context, is_
 from samuraizer.backend.cache.cache_cleaner import clean_cache
 from ..analysis.hash_service import HashService
 from ...utils.file_utils.mime_detection import is_binary
-from ...config.timezone_config import TimezoneConfigManager
+from ...config.timezone_service import TimezoneService
 
 import charset_normalizer
 
@@ -282,9 +282,9 @@ def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]
 def _add_metadata(file_info: Dict[str, Any], stat: os.stat_result) -> None:
     """Add metadata to file info with proper timezone handling."""
     try:
-        tz_config = TimezoneConfigManager()
-        tz_state = tz_config.get_config()
-        target_tz = tz_config.get_timezone()
+        tz_service = TimezoneService()
+        tz_state = tz_service.get_config()
+        target_tz = tz_service.get_timezone()
         use_utc = bool(tz_state.get("use_utc", False))
 
         # Convert timestamps to datetime objects with proper timezone

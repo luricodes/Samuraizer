@@ -5,7 +5,7 @@ import time
 from typing import Dict, Any, Optional, Generator, List
 from pathlib import Path
 import fnmatch
-from PyQt6.QtCore import QObject, pyqtSignal, QSettings
+from PyQt6.QtCore import QObject, pyqtSignal
 from samuraizer.backend.services.event_service.cancellation import CancellationTokenSource
 from samuraizer.backend.analysis.traversal.async_traversal import (
     get_directory_structure_async,
@@ -19,6 +19,7 @@ from samuraizer.backend.cache.connection_pool import (
     is_cache_disabled,
     set_cache_disabled,
 )
+from samuraizer.config.unified import UnifiedConfigManager
 
 
 logger = logging.getLogger(__name__)
@@ -191,8 +192,10 @@ class AnalyzerWorker(QObject):
             if not root_dir.exists():
                 raise FileNotFoundError(f"Repository path does not exist: {root_dir}")
 
-            settings = QSettings()
-            cache_disabled_setting = settings.value("settings/disable_cache", False, type=bool)
+            config_manager = UnifiedConfigManager()
+            config = config_manager.get_active_profile_config()
+            analysis_cfg = config.get("analysis", {})
+            cache_disabled_setting = not bool(analysis_cfg.get("cache_enabled", True))
             set_cache_disabled(cache_disabled_setting)
             cache_disabled = is_cache_disabled()
             logger.debug(f"Cache disabled setting: {cache_disabled}")
@@ -253,9 +256,8 @@ class AnalyzerWorker(QObject):
 
             if not cache_disabled:
                 self._emit_status("Checking cache size...")
-                cache_path_setting = settings.value("settings/cache_path", "")
-                if not cache_path_setting:
-                    cache_path_setting = str(Path.cwd() / ".cache")
+                cache_cfg = config.get("cache", {})
+                cache_path_setting = cache_cfg.get("path") or str(Path.cwd() / ".cache")
                 thread_count = repo_config.get('thread_count', 4)
                 await asyncio.to_thread(
                     self._post_analysis_cache_maintenance,

@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from samuraizer.config import ConfigurationManager
+from samuraizer.config.unified import UnifiedConfigManager
 from .filter_config_listener import FilterConfigListener
 
 logger = logging.getLogger(__name__)
@@ -340,7 +340,7 @@ class FileFiltersWidget(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.config_manager = ConfigurationManager()
+        self.config_manager = UnifiedConfigManager()
         self.config_listener = FilterConfigListener(self)
         self._syncing_config = False
         self.config_manager.add_change_listener(self._handle_config_change)
@@ -469,7 +469,7 @@ class FileFiltersWidget(QWidget):
         patterns_card.content_layout.addWidget(self.patterns_list)
         content_layout.addWidget(patterns_card)
 
-        config_path = self.config_manager.exclusion_config.config_file
+        config_path = str(self.config_manager.config_path)
         config_label = QLabel(f"Configuration file: {config_path}")
         config_label.setObjectName("filtersConfigPath")
         config_label.setWordWrap(True)
@@ -496,10 +496,21 @@ class FileFiltersWidget(QWidget):
             return
         self._syncing_config = True
         try:
-            excluded_folders = self.config_manager.exclusion_config.get_excluded_folders()
-            excluded_files = self.config_manager.exclusion_config.get_excluded_files()
-            exclude_patterns = self.config_manager.exclusion_config.get_exclude_patterns()
-            image_extensions = self.config_manager.exclusion_config.get_image_extensions()
+            config = self.config_manager.get_active_profile_config()
+            exclusions = config.get("exclusions", {})
+
+            excluded_folders = set(
+                exclusions.get("folders", {}).get("exclude", [])
+            )
+            excluded_files = set(
+                exclusions.get("files", {}).get("exclude", [])
+            )
+            exclude_patterns = list(
+                exclusions.get("patterns", {}).get("exclude", [])
+            )
+            image_extensions = {
+                ext.lower() for ext in exclusions.get("image_extensions", {}).get("include", [])
+            }
 
             self.folders_list.set_items(excluded_folders)
             self.files_list.set_items(excluded_files)
@@ -524,7 +535,29 @@ class FileFiltersWidget(QWidget):
         self._syncing_config = True
         try:
             config_snapshot = self.get_configuration()
-            self.config_manager.save_gui_filters(self)
+            active_profile = self.config_manager.active_profile
+            profile_kw = None if active_profile == "default" else active_profile
+
+            self.config_manager.set_value(
+                "exclusions.folders.exclude",
+                sorted(config_snapshot["excluded_folders"]),
+                profile=profile_kw,
+            )
+            self.config_manager.set_value(
+                "exclusions.files.exclude",
+                sorted(config_snapshot["excluded_files"]),
+                profile=profile_kw,
+            )
+            self.config_manager.set_value(
+                "exclusions.patterns.exclude",
+                list(config_snapshot["exclude_patterns"]),
+                profile=profile_kw,
+            )
+            self.config_manager.set_value(
+                "exclusions.image_extensions.include",
+                sorted(config_snapshot["image_extensions"]),
+                profile=profile_kw,
+            )
             logger.debug("Filter settings saved to config file")
 
             self._update_summary(config_snapshot)
@@ -740,7 +773,7 @@ class FileFiltersWidget(QWidget):
                 logger.debug("Unable to infer preview start dir from input: %s", text)
 
         try:
-            config_dir = Path(self.config_manager.exclusion_config.config_file).parent
+            config_dir = Path(self.config_manager.config_path).parent
             if config_dir.exists():
                 return str(config_dir)
         except Exception:  # pragma: no cover - defensive

@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QSettings, Qt
 
-from samuraizer.config import ConfigurationManager
+from samuraizer.config.unified import UnifiedConfigManager
 
 from ..github_integration.repository_selection import RepositorySelectionWidget
 from .analysis_settings.analysis_configuration import AnalysisConfigurationWidget
@@ -67,7 +67,7 @@ class AnalysisOptionsWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.settings = QSettings()
-        self.config_manager = ConfigurationManager()
+        self.config_manager = UnifiedConfigManager()
         self._syncing_config = False
         self.config_manager.add_change_listener(self._handle_config_change)
         self.destroyed.connect(self._on_destroyed)
@@ -204,12 +204,6 @@ class AnalysisOptionsWidget(QWidget):
             return
         self._syncing_config = True
         try:
-            self.settings.setValue("analysis/max_file_size", self.analysis_config_widget.max_size.value())
-            self.settings.setValue("analysis/include_binary", self.analysis_config_widget.include_binary.isChecked())
-            self.settings.setValue("analysis/follow_symlinks", self.analysis_config_widget.follow_symlinks.isChecked())
-            self.settings.setValue("analysis/encoding", self.analysis_config_widget.encoding.currentText())
-            self.settings.setValue("analysis/thread_count", self.threading_options_widget.thread_count.value())
-
             # Remove old pool_size setting if it exists
             self.settings.remove("analysis/pool_size")
 

@@ -7,8 +7,7 @@ import os
 from pathlib import Path
 from typing import Any, Coroutine, Dict, Optional
 
-from PyQt6.QtCore import QSettings
-
+from samuraizer.config.unified import UnifiedConfigManager
 from samuraizer.gui.workers.analysis.analyzer_worker import AnalyzerWorker
 from samuraizer.gui.windows.main.components.analysis_dependencies import (
     AnalysisConfig,
@@ -180,10 +179,13 @@ class AnalysisManager:
             if not os.access(output_dir, os.W_OK):
                 raise ConfigurationError(f"Output directory is not writable: {output_dir}")
 
-            settings = QSettings()
-            cache_disabled = settings.value("settings/disable_cache", False, type=bool)
+            config_manager = UnifiedConfigManager()
+            config = config_manager.get_active_profile_config()
+            analysis_cfg = config.get("analysis", {})
+            cache_cfg = config.get("cache", {})
+            cache_disabled = not bool(analysis_cfg.get("cache_enabled", True))
             if not cache_disabled:
-                cache_path = settings.value("settings/cache_path", "") or repo_config.cache_path
+                cache_path = cache_cfg.get("path") or repo_config.cache_path
                 cache_dir = Path(cache_path)
                 try:
                     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -294,9 +296,6 @@ class AnalysisManager:
 
         try:
             config = self._config_collector.collect()
-            settings = QSettings()
-            settings.setValue("analysis/thread_count", config.repository.thread_count)
-            settings.sync()
             self.current_config = config
         except RepositoryValidationError as exc:
             logger.error("Configuration error: %s", exc)

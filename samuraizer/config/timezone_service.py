@@ -1,7 +1,3 @@
-# samuraizer/config/timezone_config.py
-
-"""Timezone configuration backed by the unified configuration manager."""
-
 from __future__ import annotations
 
 import logging
@@ -9,27 +5,31 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from . import ConfigurationManager
+from .unified import UnifiedConfigManager
 
 logger = logging.getLogger(__name__)
 
 
-class TimezoneConfigManager:
-    """Access timezone settings stored in the unified configuration."""
+class TimezoneService:
+    """Convenience helper exposing timezone operations on top of the unified config."""
 
-    def __init__(self, manager: Optional["ConfigurationManager"] = None) -> None:
-        self._manager = manager or ConfigurationManager()
+    def __init__(self, manager: Optional[UnifiedConfigManager] = None) -> None:
+        self._manager = manager or UnifiedConfigManager()
         try:
-            available = set(available_timezones())
+            available: Set[str] = set(available_timezones())
         except Exception as exc:  # pragma: no cover - depends on host tzdata
             logger.debug("Unable to enumerate available timezones: %s", exc)
             available = set()
         available.add("UTC")
-        self._available_timezones: Set[str] = available
+        self._available_timezones = available
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    @property
+    def _active_profile_kw(self) -> Optional[str]:
+        active = self._manager.active_profile
+        return None if active == "default" else active
 
     def _get_timezone_section(self) -> Dict[str, Any]:
         config = self._manager.get_active_profile_config()
@@ -55,7 +55,7 @@ class TimezoneConfigManager:
             return False
 
     def _coerce_timezone(
-        self, tz_name: Optional[str], *, log: bool = False
+        self, tz_name: Optional[str], *, log_warning: bool = False
     ) -> Optional[str]:
         if not tz_name:
             return None
@@ -66,14 +66,13 @@ class TimezoneConfigManager:
             return "UTC"
         if self._is_timezone_available(tz_clean):
             return tz_clean
-        if log:
+        if log_warning:
             logger.warning("Timezone '%s' is not available on this system.", tz_clean)
         return None
 
     # ------------------------------------------------------------------
     # Retrieval helpers
     # ------------------------------------------------------------------
-
     def get_system_timezone(self) -> timezone:
         local_dt = datetime.now()
         return local_dt.astimezone().tzinfo or timezone.utc
@@ -84,7 +83,7 @@ class TimezoneConfigManager:
             return timezone.utc
 
         original_tz = config.get("repository_timezone")
-        repository_tz = self._coerce_timezone(original_tz, log=True)
+        repository_tz = self._coerce_timezone(original_tz, log_warning=True)
         if repository_tz:
             if repository_tz.upper() == "UTC":
                 return timezone.utc
@@ -115,26 +114,32 @@ class TimezoneConfigManager:
     # ------------------------------------------------------------------
     # Mutation helpers
     # ------------------------------------------------------------------
-
     def set_repository_timezone(self, tz_name: Optional[str]) -> None:
         normalised = self._coerce_timezone(tz_name)
         if tz_name and normalised is None:
             raise ValueError(f"Timezone '{tz_name}' is not available on this system")
-        self._manager.set_value("timezone.repository_timezone", normalised)
+        self._manager.set_value(
+            "timezone.repository_timezone", normalised, profile=self._active_profile_kw
+        )
         if normalised is not None:
-            self._manager.set_value("timezone.use_utc", False)
+            self._manager.set_value(
+                "timezone.use_utc", False, profile=self._active_profile_kw
+            )
 
     def use_utc(self, use_utc: bool = True) -> None:
-        self._manager.set_value("timezone.use_utc", use_utc)
+        self._manager.set_value(
+            "timezone.use_utc", use_utc, profile=self._active_profile_kw
+        )
         if use_utc:
-            self._manager.set_value("timezone.repository_timezone", None)
+            self._manager.set_value(
+                "timezone.repository_timezone", None, profile=self._active_profile_kw
+            )
 
     # ------------------------------------------------------------------
     # Discovery helpers
     # ------------------------------------------------------------------
-
     def list_timezones(self) -> List[str]:
         return sorted(self._available_timezones)
 
 
-__all__ = ["TimezoneConfigManager"]
+__all__ = ["TimezoneService"]

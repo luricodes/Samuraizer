@@ -1,7 +1,7 @@
 from pathlib import Path
 import logging
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox, QApplication
-from PyQt6.QtCore import QSize, QSettings
+from PyQt6.QtCore import QSize
 from samuraizer.backend.cache.connection_pool import (
     close_all_connections,
     flush_pending_writes,
@@ -26,7 +26,7 @@ from samuraizer.gui.windows.main.components.analysis_dependencies import (
 )
 from samuraizer.gui.windows.main.components.ui_state import UIStateManager, AnalysisState
 from samuraizer.gui.windows.main.components.dialog_manager import DialogManager
-from samuraizer.config import ConfigurationManager
+from samuraizer.config.unified import UnifiedConfigManager
 from samuraizer.gui.app.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class MainWindow(BaseWindow):
         
         # Initialize toggle_theme as a no-op until it's properly set
         self.toggle_theme = lambda theme=None: None
-        self._config_manager = ConfigurationManager()
+        self._config_manager = UnifiedConfigManager()
         self._applied_theme = ThemeManager.get_saved_theme()
         self._config_manager.add_change_listener(self._handle_config_change)
 
@@ -83,26 +83,21 @@ class MainWindow(BaseWindow):
         """Initialize the cache database connection pool."""
         pool = None
         try:
-            # Get cache path from settings or use default
-            settings = QSettings()
-            cache_path = settings.value("settings/cache_path", "")
-            if not cache_path:
-                default_cache_path = Path.cwd() / ".cache"
-                cache_path = str(default_cache_path)
-                # Save the default path to settings
-                settings.setValue("settings/cache_path", cache_path)
-                settings.sync()
-                logger.info(f"Set default cache path in settings: {cache_path}")
-            
-            cache_dir = Path(cache_path)
+            config_manager = UnifiedConfigManager()
+            config = config_manager.get_active_profile_config()
+            cache_cfg = config.get("cache", {})
+            analysis_cfg = config.get("analysis", {})
+
+            cache_path_value = cache_cfg.get("path") or str(Path.cwd() / ".cache")
+            cache_dir = Path(str(cache_path_value)).expanduser()
             cache_dir = initialize_cache_directory(cache_dir)
             cache_db_path = cache_dir / CACHE_DB_FILE
 
             logger.info(f"Initializing cache at: {cache_db_path}")
 
             # Get thread count from analysis settings
-            thread_count = settings.value("analysis/thread_count", 4, int)
-            cache_disabled = settings.value("settings/disable_cache", False, bool)
+            thread_count = int(analysis_cfg.get("threads", 4) or 4)
+            cache_disabled = not bool(analysis_cfg.get("cache_enabled", True))
 
             set_cache_disabled(cache_disabled)
 
@@ -200,13 +195,13 @@ class MainWindow(BaseWindow):
             except Exception as e:
                 logger.error(f"Error closing database connections: {e}", exc_info=True)
                 
-            # Clean up ConfigurationManager
+            # Clean up configuration manager
             try:
                 try:
                     self._config_manager.remove_change_listener(self._handle_config_change)
                 except Exception as exc:
                     logger.debug("Unable to detach config listener during close: %s", exc)
-                ConfigurationManager().cleanup()
+                self._config_manager.cleanup()
                 logger.info("Configuration manager cleaned up successfully")
             except Exception as e:
                 logger.error(f"Error cleaning up configuration manager: {e}", exc_info=True)

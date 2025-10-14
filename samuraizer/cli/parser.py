@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 
 from samuraizer.backend.services.logging.logging_service import setup_logging
-from samuraizer.config.timezone_config import TimezoneConfigManager
+from samuraizer.config.timezone_service import TimezoneService
 
 setup_logging(verbose=False)
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ def parse_arguments(argv: Optional[list[str]] = None):
     )
 
     # Timezone
-    timezone_config = TimezoneConfigManager()
+    timezone_config = TimezoneService()
     timezone_choices = timezone_config.list_timezones()
 
     parser.add_argument(

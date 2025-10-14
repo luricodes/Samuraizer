@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Optional
 
 from colorama import init as colorama_init
-from PyQt6.QtCore import QSettings
 
 from samuraizer.backend.analysis.traversal.progressive_store import ProgressiveResultStore
 from samuraizer.backend.analysis.traversal.traversal_processor import get_directory_structure
@@ -24,16 +23,20 @@ from samuraizer.backend.output.factory.output_factory import OutputFactory
 from samuraizer.backend.output.progressive_writer import write_progressive_output
 from samuraizer.backend.services.config_services import (
     CACHE_DB_FILE,
-    config_manager,
     get_default_analysis_settings,
     get_default_cache_settings,
     get_default_output_settings,
     get_default_timezone_settings,
+    get_excluded_folders,
+    get_excluded_files,
+    get_exclude_patterns,
+    get_image_extensions,
 )
 from samuraizer.backend.services.event_service.cancellation import CancellationTokenSource
 from samuraizer.backend.services.logging.logging_service import setup_logging
 from samuraizer.cli.parser import SUPPORTED_FORMATS, parse_arguments
-from samuraizer.config import ConfigError
+from samuraizer.config import ConfigError, ConfigValidationError
+from samuraizer.config.unified import UnifiedConfigManager
 
 DEFAULT_THREAD_MULTIPLIER = 2
 
@@ -59,44 +62,16 @@ def signal_handler(sig, frame):
         sys.exit(1)
 
 
-def get_cache_path(args_cache_path: Path) -> Path:
-    """Determine the cache path using GUI settings when available."""
+def get_cache_path(target_path: Path) -> Path:
+    """Normalise the cache path provided via CLI or configuration."""
 
     try:
-        try:
-            settings = QSettings()
-            in_gui_mode = True
-        except Exception:  # pragma: no cover - GUI not available
-            in_gui_mode = False
-            settings = None
-
-        if in_gui_mode and settings is not None:
-            if settings.value("settings/disable_cache", False, type=bool):
-                logging.info(
-                    "Cache disabled in GUI settings, using path from configuration/CLI: %s",
-                    args_cache_path,
-                )
-                return args_cache_path
-
-            settings_cache_path = settings.value("settings/cache_path")
-            if settings_cache_path:
-                cache_path = Path(settings_cache_path)
-                if not cache_path.is_absolute():
-                    cache_path = cache_path.resolve()
-                logging.info("Using cache path from GUI settings: %s", cache_path)
-                return cache_path
-
-        if args_cache_path != Path(".cache"):
-            resolved_path = args_cache_path.resolve()
-            logging.info("Using command line cache path: %s", resolved_path)
-            return resolved_path
-
-        default_path = Path.cwd() / ".cache"
-        logging.info("Using default cache path: %s", default_path)
-        return default_path
+        resolved_path = target_path.expanduser().resolve()
+        logging.info("Using cache path: %s", resolved_path)
+        return resolved_path
     except Exception as exc:
         logging.error("Error determining cache path: %s", exc)
-        return args_cache_path
+        return target_path
 
 
 def initialize_cache_directory(cache_path: Path) -> Path:
@@ -148,12 +123,12 @@ def run() -> None:
 
     setup_logging(args.verbose, args.log_file)
 
+    config_manager = UnifiedConfigManager()
+
     # Load configuration and profiles
     config_path = Path(args.config).expanduser() if args.config else None
     try:
-        config_manager.reload_configuration(
-            str(config_path) if config_path else None, profile=args.profile
-        )
+        config_manager.reload(config_path, profile=args.profile)
     except ConfigError as exc:
         logging.error("Failed to load configuration: %s", exc)
         sys.exit(1)
@@ -162,14 +137,18 @@ def run() -> None:
         sys.exit(1)
 
     if args.config_validate:
-        valid = config_manager.validate_configuration()
-        message = "Configuration is valid." if valid else "Configuration validation failed."
-        print(message)
-        sys.exit(0 if valid else 1)
+        try:
+            config_manager.validate_current()
+        except ConfigValidationError as exc:
+            logging.error("Configuration validation failed: %s", exc)
+            print("Configuration validation failed.")
+            sys.exit(1)
+        print("Configuration is valid.")
+        sys.exit(0)
 
     if args.config_migrate:
         try:
-            migrated = config_manager.migrate_configuration()
+            migrated = config_manager.migrate()
         except ConfigError as exc:
             logging.error("Configuration migration failed: %s", exc)
             print(f"Configuration migration failed: {exc}")
@@ -246,10 +225,10 @@ def run() -> None:
 
     output_file = _prepare_output_format(output_file, output_format)
 
-    excluded_folders = config_manager.exclusion_config.get_excluded_folders()
-    excluded_files = config_manager.exclusion_config.get_excluded_files()
-    exclude_patterns = config_manager.exclusion_config.get_exclude_patterns()
-    image_extensions = config_manager.exclusion_config.get_image_extensions()
+    excluded_folders = get_excluded_folders()
+    excluded_files = get_excluded_files()
+    exclude_patterns = get_exclude_patterns()
+    image_extensions = get_image_extensions()
 
     if args.exclude_folders:
         excluded_folders.update(args.exclude_folders)
@@ -263,7 +242,7 @@ def run() -> None:
         }
         image_extensions.update(additional_image_extensions)
 
-    logging.info("Active configuration profile: %s", config_manager.get_active_profile())
+    logging.info("Active configuration profile: %s", config_manager.active_profile)
     logging.info("Search the directory: %s", root_directory)
     logging.info("Excluded folders: %s", ", ".join(sorted(excluded_folders)))
     logging.info("Excluded files: %s", ", ".join(sorted(excluded_files)))

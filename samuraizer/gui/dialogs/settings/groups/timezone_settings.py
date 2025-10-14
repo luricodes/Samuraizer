@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QLabel
 )
 from PyQt6.QtGui import QFont
-from samuraizer.config.timezone_config import TimezoneConfigManager
+from samuraizer.config.timezone_service import TimezoneService
 from ..base import BaseSettingsGroup
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class TimezoneSettingsGroup(BaseSettingsGroup):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         # Initialize timezone config before calling parent's __init__
-        self.timezone_config = TimezoneConfigManager()
+        self.timezone_config = TimezoneService()
         self._syncing = False
         super().__init__("Timezone Settings", parent)
 

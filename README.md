@@ -195,32 +195,45 @@ GUI Settings
 - Filters: exclusion patterns
 - Visualization: graph display options
 
-Configuration File (yaml example)
-```yaml
-analysis:
-  max_file_size: 50
-  include_binary: false
-  follow_symlinks: false
-  thread_count: 4
-  hash_algorithm: "xxhash"
-  encoding: "auto"
+Unified configuration is stored in a single TOML file managed by the unified configuration manager.  
+Default location: `~/.config/samurai/config.toml` on Linux/macOS or `%APPDATA%\samurai\config.toml` on Windows.  
+Both CLI (`--config`, `--profile`) and GUI share this file, including support for configuration profiles.
 
-filters:
-  excluded_folders:
-    - node_modules
-    - .git
-  excluded_files:
-    - "*.pyc"
-  exclude_patterns:
-    - "test_*"
-    - "*.tmp"
+Configuration File (TOML example)
+```toml
+config_version = "1.0"
 
-output:
-  format: "json"
-  streaming: false
-  pretty_print: true
-  include_summary: true
-  use_compression: false
+[analysis]
+default_format = "json"
+max_file_size_mb = 50
+threads = 4
+follow_symlinks = false
+include_binary = false
+encoding = "auto"
+cache_enabled = true
+include_summary = true
+
+[cache]
+path = "~/.cache/samurai"
+size_limit_mb = 1000
+cleanup_days = 30
+
+[exclusions.folders]
+exclude = ["node_modules", ".git", "__pycache__", ".venv", "dist", "build"]
+
+[exclusions.patterns]
+exclude = ["*.pyc", "test_*", "*.tmp", ".DS_Store", "Thumbs.db"]
+
+[output]
+compression = false
+streaming = false
+pretty_print = true
+
+[theme]
+name = "dark"
+
+[timezone]
+use_utc = false
 ```
 
 Cache System

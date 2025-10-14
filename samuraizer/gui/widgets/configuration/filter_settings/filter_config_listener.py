@@ -38,21 +38,18 @@ class FilterConfigListener(ConfigurationListener):
     def _update_all_filters(self) -> None:
         """Update all filter lists from current configuration"""
         try:
-            # Get current configuration
-            config = self.widget.config_manager.exclusion_config
-            
-            # Update folder list
-            self.widget.folders_list.setItems(config.get_excluded_folders())
-            
-            # Update file list
-            self.widget.files_list.setItems(config.get_excluded_files())
-            
-            # Update patterns list
-            self.widget.patterns_list.setPatterns(config.get_exclude_patterns())
-            
-            # Update image extensions list
-            self.widget.image_list.setItems(config.get_image_extensions())
-            
+            manager = self.widget.config_manager
+            config = manager.get_active_profile_config().get("exclusions", {})
+
+            folders = config.get("folders", {}).get("exclude", [])
+            files = config.get("files", {}).get("exclude", [])
+            patterns = config.get("patterns", {}).get("exclude", [])
+            images = config.get("image_extensions", {}).get("include", [])
+
+            self.widget.folders_list.setItems(folders)
+            self.widget.files_list.setItems(files)
+            self.widget.patterns_list.setPatterns(patterns)
+            self.widget.image_list.setItems(images)
         except Exception as e:
             logger.error(f"Error updating filter lists: {e}")
 

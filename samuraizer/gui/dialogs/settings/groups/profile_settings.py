@@ -117,7 +117,7 @@ class ProfileSettingsGroup(BaseSettingsGroup):
 
     def _refresh_profiles(self) -> None:
         with self.suspend_config_updates():
-            active = self.config_manager.get_active_profile()
+            active = self.config_manager.active_profile
             profiles = self.config_manager.list_profiles()
 
             current_selection = self.profile_combo.currentText()
@@ -131,7 +131,7 @@ class ProfileSettingsGroup(BaseSettingsGroup):
                 self.profile_combo.setCurrentText(active)
             self.profile_combo.blockSignals(False)
 
-            config_path = self.config_manager.exclusion_config.config_file
+            config_path = str(self.config_manager.config_path)
             self.config_path_label.setText(f"Configuration file: {config_path}")
 
             self.delete_button.setEnabled(active != "default")
@@ -234,7 +234,7 @@ class ProfileSettingsGroup(BaseSettingsGroup):
         if response != QMessageBox.StandardButton.Yes:
             return
         try:
-            self.config_manager.delete_profile(target)
+            self.config_manager.remove_profile(target)
             self._refresh_profiles()
         except ConfigError as exc:
             self._show_error(str(exc))

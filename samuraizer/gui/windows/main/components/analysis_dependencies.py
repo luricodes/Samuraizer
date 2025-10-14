@@ -6,7 +6,7 @@ from typing import Dict, Iterable, Optional, Protocol, runtime_checkable, Sequen
 
 from PyQt6.QtWidgets import QMessageBox
 
-from samuraizer.config import ConfigurationManager
+from samuraizer.config.unified import UnifiedConfigManager
 
 
 class RepositoryValidationError(Exception):
@@ -282,7 +282,7 @@ class UIAnalysisConfigCollector(AnalysisConfigCollector):
             use_compression=output_config.get("use_compression", False),
         )
 
-        config_manager = ConfigurationManager()
+        config_manager = UnifiedConfigManager()
         config_manager.set_value("analysis.max_file_size_mb", repo_cfg.max_file_size)
         config_manager.set_value("analysis.include_binary", repo_cfg.include_binary)
         config_manager.set_value("analysis.follow_symlinks", repo_cfg.follow_symlinks)

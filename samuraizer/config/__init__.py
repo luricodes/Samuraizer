@@ -6,13 +6,12 @@ from .exceptions import (
     ConfigMigrationError,
     ConfigIOError,
 )
+from .timezone_service import TimezoneService
 from .unified import UnifiedConfigManager, ProfileResolutionResult
-from .facade import ConfigurationManager, ExclusionConfig
 
 __all__ = [
     "UnifiedConfigManager",
-    "ConfigurationManager",
-    "ExclusionConfig",
+    "TimezoneService",
     "ConfigError",
     "ConfigValidationError",
     "ConfigMigrationError",

@@ -6,9 +6,11 @@ from typing import Any, Dict, Set
 import sqlite3
 import time
 
-from PyQt6.QtCore import QSettings
-
-from samuraizer.backend.services.config_services import CACHE_DB_FILE
+from samuraizer.backend.services.config_services import (
+    CACHE_DB_FILE,
+    get_default_analysis_settings,
+    get_default_cache_settings,
+)
 from .connection_pool import (
     close_all_connections,
     get_connection_context,
@@ -21,8 +23,8 @@ logger = logging.getLogger(__name__)
 def check_and_vacuum_if_needed(db_path: Path) -> None:
     """Check if cache size exceeds max limit and vacuum if needed."""
     try:
-        settings = QSettings()
-        max_cache_size = settings.value("settings/max_cache_size", 1000, type=int)  # Default 1GB
+        cache_settings = get_default_cache_settings()
+        max_cache_size = int(cache_settings.get("size_limit_mb", 1000) or 1000)
         
         if db_path.exists():
             # Calculate total size including WAL and SHM files
@@ -87,7 +89,8 @@ def check_and_vacuum_if_needed(db_path: Path) -> None:
                             pass
                 
                 # Reinitialize the connection pool
-                thread_count = settings.value("settings/thread_count", 4, type=int)
+                analysis_settings = get_default_analysis_settings()
+                thread_count = int(analysis_settings.get("threads", 4) or 4)
                 initialize_connection_pool(
                     str(db_path),
                     thread_count,
@@ -152,11 +155,10 @@ def clean_cache(root_dir: Path) -> None:
             )
 
         # Get cache path from settings
-        settings = QSettings()
-        cache_path = settings.value("settings/cache_path", "")
-        if not cache_path:
-            cache_path = str(Path.cwd() / ".cache")
+        cache_settings = get_default_cache_settings()
+        cache_path_value = cache_settings.get("path", "~/.cache/samurai")
+        cache_path = Path(str(cache_path_value)).expanduser()
         
         # Check cache size and vacuum if needed
-        db_path = Path(cache_path) / CACHE_DB_FILE
+        db_path = cache_path / CACHE_DB_FILE
         check_and_vacuum_if_needed(db_path)

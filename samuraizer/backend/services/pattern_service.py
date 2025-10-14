@@ -5,10 +5,8 @@ from functools import lru_cache
 from typing import Pattern, Sequence
 
 from colorama import Fore, Style
-from samuraizer.config import ConfigurationManager
 
-# Initialize configuration manager
-config_manager = ConfigurationManager()
+from samuraizer.backend.services.config_services import get_exclude_patterns as _get_config_patterns
 
 @lru_cache(maxsize=None)
 def compile_regex(pattern: str) -> Pattern:
@@ -30,7 +28,7 @@ def get_exclude_patterns() -> list[str]:
     Returns:
         list[str]: List of exclude patterns
     """
-    return config_manager.exclusion_config.get_exclude_patterns()
+    return _get_config_patterns()
 
 def matches_patterns(filename: str, patterns: Sequence[str] = None) -> bool:
     """

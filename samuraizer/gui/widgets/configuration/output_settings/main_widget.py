@@ -13,7 +13,7 @@ from .output_file_group import OutputFileGroup
 from .format_selection_group import FormatSelectionGroup
 from .streaming_options_group import StreamingOptionsGroup
 from .additional_options_group import AdditionalOptionsGroup
-from samuraizer.config import ConfigurationManager
+from samuraizer.config.unified import UnifiedConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ class OutputOptionsWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.config_manager = ConfigurationManager()
+        self.config_manager = UnifiedConfigManager()
         self.settings_manager = SettingsManager()
         self._initializing: bool = True
         self._config_sync_lock: bool = False
@@ -245,6 +245,29 @@ class OutputOptionsWidget(QWidget):
         if self._initializing or self._config_sync_lock:
             return
         try:
+            config_snapshot = self.get_configuration()
+
+            format_value = config_snapshot.get('format')
+            if format_value:
+                self.config_manager.set_value("analysis.default_format", format_value)
+
+            self.config_manager.set_value(
+                "analysis.include_summary",
+                bool(config_snapshot.get('include_summary', True)),
+            )
+            self.config_manager.set_value(
+                "output.streaming",
+                bool(config_snapshot.get('streaming', False)),
+            )
+            self.config_manager.set_value(
+                "output.pretty_print",
+                bool(config_snapshot.get('pretty_print', False)),
+            )
+            self.config_manager.set_value(
+                "output.compression",
+                bool(config_snapshot.get('use_compression', False)),
+            )
+
             # Only save settings if auto-save is enabled
             auto_save = self.settings_manager.load_setting("settings/auto_save", False, type_=bool)
             if auto_save:

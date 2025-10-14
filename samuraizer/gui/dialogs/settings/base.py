@@ -7,7 +7,7 @@ from typing import Optional
 from PyQt6.QtCore import QSettings, QObject
 from PyQt6.QtWidgets import QGroupBox, QWidget
 
-from samuraizer.config import ConfigurationManager
+from samuraizer.config.unified import UnifiedConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class BaseSettingsGroup(QGroupBox):
     def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(title, parent)
         self.settings = QSettings()
-        self.config_manager = ConfigurationManager()
+        self.config_manager = UnifiedConfigManager()
         self._suspend_config_updates = False
         try:
             self.config_manager.add_change_listener(self._handle_config_change)
