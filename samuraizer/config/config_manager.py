@@ -358,6 +358,54 @@ def _deep_merge(base: Dict[str, Any], overrides: Dict[str, Any]) -> Dict[str, An
     return result
 
 
+_PROFILE_SECTION_KEY_MAP: Dict[str, Set[str]] = {
+    "analysis": {
+        "default_format",
+        "max_file_size_mb",
+        "threads",
+        "follow_symlinks",
+        "include_binary",
+        "encoding",
+        "hash_algorithm",
+        "cache_enabled",
+        "include_summary",
+    },
+    "output": {"compression", "streaming", "pretty_print"},
+    "cache": {"path", "size_limit_mb", "cleanup_days"},
+    "theme": {"name"},
+    "timezone": {"use_utc", "repository_timezone"},
+}
+
+
+def _apply_flat_profile_keys(
+    merged: Dict[str, Any], profile_overrides: Dict[str, Any]
+) -> Dict[str, Any]:
+    sentinel = object()
+    for section, keys in _PROFILE_SECTION_KEY_MAP.items():
+        override_section = profile_overrides.get(section)
+        if not isinstance(override_section, dict):
+            override_section = {}
+        section_dict = merged.get(section)
+        if not isinstance(section_dict, dict):
+            section_dict = {}
+            merged[section] = section_dict
+        for key in keys:
+            if key in override_section:
+                # Remove any stray root-level entries but keep explicit nested override.
+                merged.pop(key, None)
+                continue
+            value = sentinel
+            if key in profile_overrides:
+                value = deepcopy(profile_overrides[key])
+                merged.pop(key, None)
+            else:
+                value = merged.pop(key, sentinel)
+            if value is sentinel:
+                continue
+            section_dict[key] = value
+    return merged
+
+
 def _apply_profile_customisations(
     merged: Dict[str, Any], profile_overrides: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -395,7 +443,24 @@ def _apply_profile_customisations(
             merged["exclusions"]["image_extensions"]["include"] = list(
                 dict.fromkeys(existing + image_extra)
             )
+    merged = _apply_flat_profile_keys(merged, profile_overrides)
     return merged
+
+
+def _rehome_flat_keys(container: Dict[str, Any]) -> bool:
+    corrected = False
+    for section, keys in _PROFILE_SECTION_KEY_MAP.items():
+        for key in keys:
+            if key not in container:
+                continue
+            value = container.pop(key)
+            section_dict = container.get(section)
+            if not isinstance(section_dict, dict):
+                section_dict = {}
+                container[section] = section_dict
+            section_dict[key] = value
+            corrected = True
+    return corrected
 
 
 def _resolve_default_base(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -496,8 +561,9 @@ class UnifiedConfigManager:
                 raise ConfigValidationError("Configuration root must be a table")
             self._raw_config = _deep_merge(DEFAULT_CONFIG, loaded)
             timezone_fixed = self._normalise_timezone(self._raw_config)
+            profile_fixed = self._normalise_profile_sections(self._raw_config)
             self._validate(self._raw_config)
-            if timezone_fixed:
+            if timezone_fixed or profile_fixed:
                 self._write_config()
         except FileNotFoundError:
             self._raw_config = deepcopy(DEFAULT_CONFIG)
@@ -921,6 +987,7 @@ class UnifiedConfigManager:
             profile_data["inherit"] = inherit
             profiles[name] = profile_data
             self._normalise_timezone(self._raw_config)
+            self._normalise_profile_sections(self._raw_config)
             self._write_config()
             self._profile_cache.clear()
             self._notify_change()
@@ -968,6 +1035,15 @@ class UnifiedConfigManager:
         with self._lock:
             extra = sorted(self._raw_config.get("profiles", {}).keys())
         return ["default", *extra]
+
+    def _normalise_profile_sections(self, data: Dict[str, Any]) -> bool:
+        corrected = _rehome_flat_keys(data)
+        profiles = data.get("profiles", {})
+        if isinstance(profiles, dict):
+            for profile in profiles.values():
+                if isinstance(profile, dict) and _rehome_flat_keys(profile):
+                    corrected = True
+        return corrected
 
     def _normalise_timezone(self, data: Dict[str, Any]) -> bool:
         corrected = False

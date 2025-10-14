@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
-from .config_manager import UnifiedConfigManager
+from .config_manager import ConfigurationManager
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 class TimezoneConfigManager:
     """Access timezone settings stored in the unified configuration."""
 
-    def __init__(self, manager: Optional[UnifiedConfigManager] = None) -> None:
-        self._manager = manager or UnifiedConfigManager()
+    def __init__(self, manager: Optional["ConfigurationManager"] = None) -> None:
+        self._manager = manager or ConfigurationManager()
         try:
             available = set(available_timezones())
         except Exception as exc:  # pragma: no cover - depends on host tzdata

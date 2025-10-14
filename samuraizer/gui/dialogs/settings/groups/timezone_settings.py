@@ -16,6 +16,7 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         # Initialize timezone config before calling parent's __init__
         self.timezone_config = TimezoneConfigManager()
+        self._syncing = False
         super().__init__("Timezone Settings", parent)
 
     def setup_ui(self) -> None:
@@ -65,6 +66,8 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
         self._update_description()
 
     def _on_utc_changed(self, state: int) -> None:
+        if self._syncing:
+            return
         """Handle UTC checkbox state changes."""
         is_checked = bool(state)
         has_choices = self.timezone_combo.count() > 1
@@ -79,6 +82,8 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
 
     def _on_timezone_changed(self, index: int) -> None:
         """Handle timezone combo box changes."""
+        if self._syncing:
+            return
         if self.use_utc_checkbox.isChecked():
             return
             
@@ -113,6 +118,10 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
     def load_settings(self) -> None:
         """Load current timezone settings."""
         try:
+            self._syncing = True
+            self.use_utc_checkbox.blockSignals(True)
+            self.timezone_combo.blockSignals(True)
+
             config = self.timezone_config.get_config()
             
             # Set UTC checkbox
@@ -136,12 +145,14 @@ class TimezoneSettingsGroup(BaseSettingsGroup):
             has_choices = self.timezone_combo.count() > 1
             self.timezone_combo.setEnabled(not config['use_utc'] and has_choices)
             
-            # Update description
-            self._update_description()
-            
         except Exception as e:
             logger.error(f"Error loading timezone settings: {e}")
             raise
+        finally:
+            self.timezone_combo.blockSignals(False)
+            self.use_utc_checkbox.blockSignals(False)
+            self._syncing = False
+        self._update_description()
 
     def save_settings(self) -> None:
         """Save current timezone settings."""
