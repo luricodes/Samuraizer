@@ -38,6 +38,17 @@ class AnalyzerWorker(QObject):
         'messagepack': 'msgpack'
     }
 
+    # Output formatter options supported per format. Streaming variants use the
+    # "<format>_stream" naming convention.
+    _supported_formatter_options = {
+        'json': {'pretty_print'},
+        'json_stream': {'pretty_print'},
+        'xml': {'pretty_print'},
+        'jsonl': {'remove_empty_fields'},
+        'msgpack': {'use_compression'},
+        'msgpack_stream': {'use_compression'},
+    }
+
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
         self.config = config
@@ -491,18 +502,46 @@ class AnalyzerWorker(QObject):
         if not output_path:
             return
 
-        formatter_config = {
-            'pretty_print': output_config.get('pretty_print', True),
-            'use_compression': output_config.get('use_compression', False),
-        }
-
         streaming = isinstance(results, Generator) or output_format == 'jsonl'
+        effective_format = (
+            f"{output_format}_stream"
+            if streaming and output_format in {"json", "msgpack"}
+            else output_format
+        )
+
+        formatter_config = self._build_formatter_config(effective_format, output_config)
+
         output_func = OutputFactory.get_output(
             output_format,
             streaming=streaming,
-            config=formatter_config,
+            config=formatter_config or None,
         )
         output_func(results, output_path)
+
+    def _build_formatter_config(
+        self,
+        output_format: str,
+        output_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Return formatter configuration filtered for the requested format."""
+
+        supported_options = self._supported_formatter_options.get(output_format, set())
+        if not supported_options or not output_config:
+            return {}
+
+        option_extractors: Dict[str, Any] = {
+            'pretty_print': lambda: bool(output_config.get('pretty_print', True)),
+            'use_compression': lambda: bool(output_config.get('use_compression', False)),
+            'remove_empty_fields': lambda: bool(output_config.get('remove_empty_fields', False)),
+        }
+
+        formatter_config: Dict[str, Any] = {}
+        for option in supported_options:
+            extractor = option_extractors.get(option)
+            if extractor is not None:
+                formatter_config[option] = extractor()
+
+        return formatter_config
 
     def stop(self):
         """Stop the analysis"""
