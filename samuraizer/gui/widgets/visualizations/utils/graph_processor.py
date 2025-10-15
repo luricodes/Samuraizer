@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ def prepare_dot_content(results_data: Dict[str, Any]) -> str:
         str: Der generierte DOT-Inhalt.
     """
     try:
-        def create_dot_node(name: str, attrs: dict = None) -> str:
+        def create_dot_node(name: str, attrs: Optional[Dict[str, Any]] = None) -> str:
             sanitized = name.replace('"', '\\"').replace('/', '_').replace('\\', '_')
             node_attrs = {
                 'fontname': 'Helvetica',
@@ -31,7 +31,11 @@ def prepare_dot_content(results_data: Dict[str, Any]) -> str:
             attr_str = ', '.join(f'{k}="{v}"' for k, v in node_attrs.items())
             return f'"{sanitized}" [{attr_str}]'
 
-        def create_edge(src: str, dst: str, attrs: dict = None) -> str:
+        def create_edge(
+            src: str,
+            dst: str,
+            attrs: Optional[Dict[str, Any]] = None,
+        ) -> str:
             src_sanitized = src.replace('"', '\\"').replace('/', '_').replace('\\', '_')
             dst_sanitized = dst.replace('"', '\\"').replace('/', '_').replace('\\', '_')
             edge_attrs = {

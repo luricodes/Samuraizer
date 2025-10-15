@@ -1,10 +1,10 @@
 # samuraizer/output/yaml_output.py
 
 import logging
-from typing import Any, Dict
-from pathlib import Path
 import tempfile
 import shutil
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 from colorama import Fore, Style
 import yaml
@@ -15,7 +15,11 @@ class YAMLError(Exception):
     pass
 
 
-def output_to_yaml(data: Dict[str, Any], output_file: str, config: Dict[str, Any] = None) -> None:
+def output_to_yaml(
+    data: Dict[str, Any],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Writes data to a YAML file with advanced options, atomic write operations, and improved error handling.
 
@@ -24,7 +28,7 @@ def output_to_yaml(data: Dict[str, Any], output_file: str, config: Dict[str, Any
         output_file (str): The path to the output file.
         config (Dict[str, Any], optional): Configuration options for YAML output.
     """
-    default_options = {
+    default_options: Dict[str, Any] = {
         'allow_unicode': True,
         'sort_keys': False,
         'default_flow_style': False,  # Improves readability by using block style

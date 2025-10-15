@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, Generator, Iterator, List, Optional, Sequence, Tuple
 from xml.sax.saxutils import escape as xml_escape
 
 import yaml
@@ -24,6 +24,20 @@ EntryIterator = Iterator[Tuple[PathParts, Dict[str, object]]]
 class _Context:
     indent_level: int
     has_items: bool = False
+
+
+def _as_bool(value: object, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "1", "yes", "on"}:
+            return True
+        if lowered in {"false", "0", "no", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
 
 
 def write_progressive_output(
@@ -152,7 +166,7 @@ def _write_json(entries: EntryIterator, summary: Dict[str, object], output_file:
                 stack.append(dir_name)
 
             current_ctx = contexts[-1]
-            _write_value(current_ctx, filename, info)
+            _write_value(fh, current_ctx, filename, info)
 
         while stack:
             _close_directory()
@@ -164,7 +178,7 @@ def _write_json(entries: EntryIterator, summary: Dict[str, object], output_file:
         fh.write("}")
 
         if summary:
-            _write_value(contexts[-1], "summary", summary)
+            _write_value(fh, contexts[-1], "summary", summary)
 
         if pretty:
             fh.write("\n")
@@ -172,7 +186,7 @@ def _write_json(entries: EntryIterator, summary: Dict[str, object], output_file:
 
 
 def _write_jsonl(entries: EntryIterator, summary: Dict[str, object], output_file: str, config: Dict[str, object]) -> None:
-    def _generator() -> Iterator[Dict[str, object]]:
+    def _generator() -> Generator[Dict[str, object], None, None]:
         yield from _iter_entry_records(entries)
         if summary:
             yield {"summary": summary}
@@ -181,7 +195,7 @@ def _write_jsonl(entries: EntryIterator, summary: Dict[str, object], output_file
 
 
 def _write_msgpack(entries: EntryIterator, summary: Dict[str, object], output_file: str, config: Dict[str, object]) -> None:
-    def _generator() -> Iterator[Dict[str, object]]:
+    def _generator() -> Generator[Dict[str, object], None, None]:
         yield from _iter_entry_records(entries)
         if summary:
             yield {"summary": summary}
@@ -190,11 +204,22 @@ def _write_msgpack(entries: EntryIterator, summary: Dict[str, object], output_fi
 
 
 def _write_csv(entries: EntryIterator, output_file: str, config: Dict[str, object]) -> None:
-    output_to_csv_stream(_iter_entry_records(entries), output_file, config)
+    def _generator() -> Generator[Dict[str, object], None, None]:
+        yield from _iter_entry_records(entries)
+
+    output_to_csv_stream(_generator(), output_file, config)
 
 
 def _write_yaml(entries: EntryIterator, summary: Dict[str, object], output_file: str, config: Dict[str, object]) -> None:
-    indent = int(config.get("indent", 2)) if config.get("indent") is not None else 2
+    indent_value = config.get("indent")
+    indent = 2
+    if isinstance(indent_value, (int, str)):
+        try:
+            indent = int(indent_value)
+        except (TypeError, ValueError):
+            indent = 2
+    if indent <= 0:
+        indent = 2
     if indent <= 0:
         indent = 2
 
@@ -341,8 +366,9 @@ def _write_dot(entries: EntryIterator, summary: Dict[str, object], output_file: 
 
             file_id = sanitize_dot_id(str(path))
             label = filename.replace('"', '\\"')
-            if include_content and isinstance(info.get("content"), str):
-                content = sanitize_dot_label(info["content"][:1024])
+            content_value = info.get("content")
+            if include_content and isinstance(content_value, str):
+                content = sanitize_dot_label(content_value[:1024])
                 label += f"\\nContent: {content}"
             fh.write(f'    "{file_id}" [label="{label}", shape=note, color="{file_color}"];\n')
             if parent_id:
@@ -363,7 +389,7 @@ def _write_dot(entries: EntryIterator, summary: Dict[str, object], output_file: 
 
 
 def _write_sexp(entries: EntryIterator, summary: Dict[str, object], output_file: str, config: Dict[str, object]) -> None:
-    include_content = config.get("include_content", True)
+    include_content = _as_bool(config.get("include_content", True), True)
     with open(output_file, "w", encoding="utf-8") as fh:
         fh.write("(repository\n")
         stack: List[str] = []
@@ -386,7 +412,14 @@ def _write_sexp(entries: EntryIterator, summary: Dict[str, object], output_file:
                 fh.write(f"{_indent(idx + 1)}(directory {format_atom(dir_name, 'name')}\n")
                 stack.append(dir_name)
 
-            fh.write(format_file_entry(filename, info, _indent(len(directories) + 1), include_content))
+            fh.write(
+                format_file_entry(
+                    filename,
+                    info,
+                    _indent(len(directories) + 1),
+                    include_content,
+                )
+            )
             fh.write("\n")
 
         while stack:

@@ -1,9 +1,9 @@
 import datetime
-from datetime import timezone
+from datetime import timezone, tzinfo
 import logging
 from typing import Any, Optional
 
-def format_timestamp(timestamp: Any, target_tz: Optional[timezone] = None) -> str:
+def format_timestamp(timestamp: Any, target_tz: Optional[tzinfo] = None) -> str:
     """
     Formats a timestamp in ISO 8601 format.
     
@@ -31,11 +31,12 @@ def format_timestamp(timestamp: Any, target_tz: Optional[timezone] = None) -> st
             return ""
     return ""
 
-def get_system_timezone() -> timezone:
+def get_system_timezone() -> tzinfo:
     """
     Get the system's local timezone.
     
     Returns:
         The system's timezone
     """
-    return datetime.datetime.now(timezone.utc).astimezone().tzinfo
+    tz = datetime.datetime.now(timezone.utc).astimezone().tzinfo
+    return tz if tz is not None else timezone.utc

@@ -10,9 +10,11 @@ import threading
 import time
 from contextlib import contextmanager, asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple, AsyncGenerator
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple
 
 from .cache_state import CacheStateManager
+
+PendingWrite = Tuple[Any, ...]
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,13 @@ class ConnectionPool:
         return cls._instance
 
     def __init__(self, db_path: str, thread_count: int, force_disable_cache: bool = False) -> None:
+        if not hasattr(self, "_state_lock"):
+            self._state_lock = threading.RLock()
+        if not hasattr(self, "pool"):
+            self.pool: Optional[queue.Queue[sqlite3.Connection]] = None
+        if not hasattr(self, "_write_queue"):
+            self._write_queue: Optional[queue.Queue[PendingWrite]] = None
+
         pool_size = calculate_pool_size(thread_count)
         new_settings = {
             'db_path': db_path,
@@ -119,7 +128,7 @@ class ConnectionPool:
         self._pending_writes = 0
         self._stop_event = threading.Event()
         self._integrity_checked = False
-        self._write_queue: Optional[queue.Queue] = queue.Queue()
+        self._write_queue = queue.Queue[PendingWrite]()
 
     def _start_write_worker(self):
         """Start the background worker for processing write operations"""
@@ -155,10 +164,11 @@ class ConnectionPool:
         self._pending_writes = 0
         self._write_queue = None
 
-        if hasattr(self, "pool") and self.pool is not None:
-            while not self.pool.empty():
+        pool = self.pool
+        if pool is not None:
+            while not pool.empty():
                 try:
-                    conn = self.pool.get_nowait()
+                    conn = pool.get_nowait()
                     conn.close()
                 except queue.Empty:
                     break
@@ -183,18 +193,19 @@ class ConnectionPool:
         self._initialized = True
 
     def _discard_queue_entries(self) -> int:
-        if not hasattr(self, "_write_queue") or self._write_queue is None:
+        queue_ref = self._write_queue
+        if queue_ref is None:
             return 0
 
         discarded = 0
         while True:
             try:
-                self._write_queue.get_nowait()
+                queue_ref.get_nowait()
             except queue.Empty:
                 break
             else:
                 discarded += 1
-                self._write_queue.task_done()
+                queue_ref.task_done()
 
         if discarded:
             self._mark_writes_completed(discarded)
@@ -204,16 +215,17 @@ class ConnectionPool:
     def _write_worker(self):
         """Background worker that processes batched write operations"""
         while not self._stop_event.is_set() or (
-            hasattr(self, "_write_queue") and self._write_queue and not self._write_queue.empty()
+            self._write_queue is not None and not self._write_queue.empty()
         ):
-            if not hasattr(self, "_write_queue") or self._write_queue is None:
+            queue_ref = self._write_queue
+            if queue_ref is None:
                 time.sleep(self._write_batch_timeout)
                 continue
 
-            batch: List[Tuple] = []
+            batch: List[PendingWrite] = []
 
             try:
-                item = self._write_queue.get(timeout=self._write_batch_timeout)
+                item = queue_ref.get(timeout=self._write_batch_timeout)
                 batch.append(item)
             except queue.Empty:
                 continue
@@ -224,7 +236,7 @@ class ConnectionPool:
                 and (time.time() - batch_start_time) < self._write_batch_timeout
             ):
                 try:
-                    batch.append(self._write_queue.get_nowait())
+                    batch.append(queue_ref.get_nowait())
                 except queue.Empty:
                     break
 
@@ -233,7 +245,7 @@ class ConnectionPool:
                     logger.debug("Dropping cache write batch because caching is disabled")
                     self._mark_writes_completed(len(batch))
                     for _ in batch:
-                        self._write_queue.task_done()
+                        queue_ref.task_done()
                     continue
 
                 with self._write_lock:
@@ -245,9 +257,9 @@ class ConnectionPool:
                         logger.error(f"Error processing write batch: {e}")
                     finally:
                         for _ in batch:
-                            self._write_queue.task_done()
+                            queue_ref.task_done()
 
-    def _process_write_batch(self, conn: sqlite3.Connection, batch: List[Tuple]):
+    def _process_write_batch(self, conn: sqlite3.Connection, batch: List[PendingWrite]):
         """Process a batch of write operations"""
         cursor = conn.cursor()
         try:
@@ -270,29 +282,28 @@ class ConnectionPool:
     def _mark_writes_completed(self, count: int) -> None:
         with self._pending_lock:
             self._pending_writes = max(0, self._pending_writes - count)
-            queue_empty = (
-                not hasattr(self, "_write_queue")
-                or self._write_queue is None
-                or self._write_queue.empty()
-            )
+            queue_empty = self._write_queue is None or self._write_queue.empty()
             if self._pending_writes == 0 and queue_empty:
                 self._pending_event.set()
 
-    def queue_write(self, entry: Tuple, synchronous: bool = False):
+    def queue_write(self, entry: PendingWrite, synchronous: bool = False):
         """Queue a write operation to be processed by the write worker"""
         if CacheStateManager.is_disabled():
             self._cache_disabled = True
             logger.debug("Skipping cache write because caching is disabled")
             return
 
-        if not hasattr(self, "_write_queue") or self._write_queue is None:
-            self._write_queue = queue.Queue()
+        if self._write_queue is None:
+            self._write_queue = queue.Queue[PendingWrite]()
 
         with self._pending_lock:
             self._pending_writes += 1
             self._pending_event.clear()
 
-        self._write_queue.put(entry)
+        queue_ref = self._write_queue
+        if queue_ref is None:
+            raise RuntimeError("Write queue unavailable after initialization.")
+        queue_ref.put(entry)
 
         if synchronous:
             self.flush()
@@ -313,7 +324,8 @@ class ConnectionPool:
 
     def _drain_queue_synchronously(self) -> None:
         """Process any remaining items in the write queue synchronously."""
-        if not hasattr(self, "_write_queue") or self._write_queue is None:
+        queue_ref = self._write_queue
+        if queue_ref is None:
             return
 
         if CacheStateManager.is_disabled():
@@ -321,16 +333,16 @@ class ConnectionPool:
             return
 
         drained = 0
-        while not self._write_queue.empty():
-            batch: List[Tuple] = []
+        while not queue_ref.empty():
+            batch: List[PendingWrite] = []
             try:
-                batch.append(self._write_queue.get_nowait())
+                batch.append(queue_ref.get_nowait())
             except queue.Empty:
                 break
 
             while len(batch) < self._write_batch_size:
                 try:
-                    batch.append(self._write_queue.get_nowait())
+                    batch.append(queue_ref.get_nowait())
                 except queue.Empty:
                     break
 
@@ -347,7 +359,7 @@ class ConnectionPool:
                 logger.error(f"Error during synchronous cache flush: {e}")
             finally:
                 for _ in batch:
-                    self._write_queue.task_done()
+                    queue_ref.task_done()
                 if not processed:
                     self._mark_writes_completed(len(batch))
                 drained += len(batch)
@@ -378,11 +390,12 @@ class ConnectionPool:
 
     def _cleanup(self, force: bool = False) -> None:
         self.shutdown(force=force)
-        if hasattr(self, 'pool') and self.pool is not None:
+        pool = self.pool
+        if pool is not None:
             logger.debug("Cleaning up existing connections...")
-            while not self.pool.empty():
+            while not pool.empty():
                 try:
-                    conn = self.pool.get_nowait()
+                    conn = pool.get_nowait()
                     conn.close()
                 except (queue.Empty, sqlite3.Error) as e:
                     logger.error(f"Error during connection cleanup: {e}")
@@ -434,8 +447,11 @@ class ConnectionPool:
             raise
         
         logger.debug(f"Initializing SQLite database at: {self.db_path}")
-        self.pool = queue.Queue(maxsize=self.pool_size)
-        self._write_queue = queue.Queue()
+        self.pool = queue.Queue[sqlite3.Connection](maxsize=self.pool_size)
+        self._write_queue = queue.Queue[PendingWrite]()
+        pool = self.pool
+        if pool is None:
+            raise RuntimeError("Failed to create connection pool queue.")
 
         attempted_reset = False
 
@@ -485,7 +501,7 @@ class ConnectionPool:
                             conn.close()
                             raise
 
-                    self.pool.put(conn)
+                    pool.put(conn)
                     logger.debug(f"Initialized connection {i+1}/{self.pool_size}")
                 break
             except CacheIntegrityError as integrity_error:
@@ -497,14 +513,17 @@ class ConnectionPool:
                     logger.error("Cache database integrity check failed after reset attempt.")
                     raise
                 attempted_reset = True
-                while not self.pool.empty():
+                while not pool.empty():
                     try:
-                        self.pool.get_nowait().close()
+                        pool.get_nowait().close()
                     except Exception:
                         pass
                 self._handle_corrupt_cache()
                 self._integrity_checked = False
-                self.pool = queue.Queue(maxsize=self.pool_size)
+                self.pool = queue.Queue[sqlite3.Connection](maxsize=self.pool_size)
+                pool = self.pool
+                if pool is None:
+                    raise RuntimeError("Failed to recreate connection pool queue.")
                 continue
             except sqlite3.Error as e:
                 logger.error(f"SQLite error during database initialization: {e}")
@@ -532,7 +551,10 @@ class ConnectionPool:
 
         conn: Optional[sqlite3.Connection] = None
         try:
-            conn = self.pool.get(timeout=20.0)  # Increased timeout
+            pool = self.pool
+            if pool is None:
+                raise RuntimeError("Connection pool is not available.")
+            conn = pool.get(timeout=20.0)  # Increased timeout
             if not self._validate_connection(conn):
                 logger.warning("Connection is invalid. Creating a new connection.")
                 conn = self._create_new_connection(conn)
@@ -550,7 +572,9 @@ class ConnectionPool:
                         conn.rollback()
                     except:
                         pass
-                self.pool.put(conn)
+                pool = self.pool
+                if pool is not None:
+                    pool.put(conn)
                 logger.debug("Connection returned to pool")
 
     def _blocking_get_connection(self) -> Optional[sqlite3.Connection]:
@@ -562,7 +586,10 @@ class ConnectionPool:
             return None
 
         try:
-            conn = self.pool.get(timeout=20.0)
+            pool = self.pool
+            if pool is None:
+                raise RuntimeError("Connection pool is not available.")
+            conn = pool.get(timeout=20.0)
             if not self._validate_connection(conn):
                 logger.warning("Connection is invalid. Creating a new connection.")
                 conn = self._create_new_connection(conn)
@@ -575,7 +602,8 @@ class ConnectionPool:
         """Return a connection to the pool handling commit/rollback."""
         if not conn:
             return
-        if not hasattr(self, "pool") or self.pool is None:
+        pool = self.pool
+        if pool is None:
             return
 
         try:
@@ -586,7 +614,7 @@ class ConnectionPool:
                 conn.rollback()
             except sqlite3.Error:
                 logger.debug("Rollback failed after commit error", exc_info=True)
-        self.pool.put(conn)
+        pool.put(conn)
         logger.debug("Connection returned to pool")
 
     def _validate_connection(self, conn: sqlite3.Connection) -> bool:
@@ -618,15 +646,16 @@ class ConnectionPool:
         exclude_conn: Optional[sqlite3.Connection] = None,
         drain_timeout: Optional[float] = 5.0,
     ) -> None:
-        if not hasattr(self, 'pool') or self.pool is None:
+        pool = self.pool
+        if pool is None:
             return
 
         self.shutdown(timeout=drain_timeout, force=True)
 
         closed_connections = 0
-        while not self.pool.empty():
+        while not pool.empty():
             try:
-                conn = self.pool.get_nowait()
+                conn = pool.get_nowait()
                 if conn != exclude_conn:
                     try:
                         conn.commit()
@@ -635,7 +664,7 @@ class ConnectionPool:
                     conn.close()
                     closed_connections += 1
                 else:
-                    self.pool.put(conn)
+                    pool.put(conn)
             except queue.Empty:
                 break
             except sqlite3.Error as e:
@@ -684,20 +713,20 @@ async def get_connection_context_async() -> AsyncGenerator[Optional[sqlite3.Conn
     finally:
         await loop.run_in_executor(None, _connection_pool_instance._return_connection, conn)
 
-def queue_write(entry: Tuple, synchronous: bool = False) -> None:
+def queue_write(entry: PendingWrite, synchronous: bool = False) -> None:
     """Queue a write operation to be processed in batch"""
     if _connection_pool_instance is not None:
         _connection_pool_instance.queue_write(entry, synchronous=synchronous)
     else:
         logger.warning("Connection pool not initialized. Write operation skipped.")
 
-async def queue_write_async(entry: Tuple) -> None:
+async def queue_write_async(entry: PendingWrite) -> None:
     """Async helper for queuing write operations."""
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, queue_write, entry, False)
 
 
-def queue_write_sync(entry: Tuple) -> None:
+def queue_write_sync(entry: PendingWrite) -> None:
     """Queue a write operation and wait for it to complete."""
     queue_write(entry, synchronous=True)
 

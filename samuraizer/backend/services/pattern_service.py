@@ -2,14 +2,14 @@ import fnmatch
 import logging
 import re
 from functools import lru_cache
-from typing import Pattern, Sequence
+from typing import Optional, Pattern, Sequence
 
 from colorama import Fore, Style
 
 from samuraizer.backend.services.config_services import get_exclude_patterns as _get_config_patterns
 
 @lru_cache(maxsize=None)
-def compile_regex(pattern: str) -> Pattern:
+def compile_regex(pattern: str) -> Pattern[str]:
     """
     Compiles a regex pattern and caches it.
 
@@ -30,7 +30,7 @@ def get_exclude_patterns() -> list[str]:
     """
     return _get_config_patterns()
 
-def matches_patterns(filename: str, patterns: Sequence[str] = None) -> bool:
+def matches_patterns(filename: str, patterns: Optional[Sequence[str]] = None) -> bool:
     """
     Checks if the filename matches any of the patterns (Glob or Regex).
 
@@ -49,7 +49,7 @@ def matches_patterns(filename: str, patterns: Sequence[str] = None) -> bool:
         if pattern.startswith('regex:'):
             regex: str = pattern[len('regex:'):]
             try:
-                compiled: Pattern = compile_regex(regex)
+                compiled: Pattern[str] = compile_regex(regex)
                 if compiled.match(filename):
                     return True
             except re.error as e:

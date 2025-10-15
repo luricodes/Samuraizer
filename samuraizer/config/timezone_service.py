@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from typing import Any, Dict, List, Optional, Set
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
@@ -73,11 +73,11 @@ class TimezoneService:
     # ------------------------------------------------------------------
     # Retrieval helpers
     # ------------------------------------------------------------------
-    def get_system_timezone(self) -> timezone:
+    def get_system_timezone(self) -> tzinfo:
         local_dt = datetime.now()
         return local_dt.astimezone().tzinfo or timezone.utc
 
-    def get_timezone(self) -> timezone:
+    def get_timezone(self) -> tzinfo:
         config = self._get_timezone_section()
         if config.get("use_utc", False):
             return timezone.utc

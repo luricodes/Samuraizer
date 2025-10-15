@@ -1,6 +1,6 @@
 # samuraizer/output/output_factory.py
 
-from typing import Callable, Dict, Any
+from typing import Any, Callable, Dict, Optional
 
 from ..formatters.json.json_output import output_to_json, output_to_json_stream
 from ..formatters.yaml.yaml_output import output_to_yaml
@@ -35,7 +35,12 @@ class OutputFactory:
     }
 
     @classmethod
-    def get_output(cls, format: str, streaming: bool = False, config: Dict[str, Any] = None) -> Callable[..., None]:
+    def get_output(
+        cls,
+        format: str,
+        streaming: bool = False,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Callable[..., None]:
         """
         Get the appropriate output function for the specified format.
         

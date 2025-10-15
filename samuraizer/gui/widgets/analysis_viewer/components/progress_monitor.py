@@ -1,8 +1,15 @@
 import logging
 from datetime import datetime
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QProgressBar, 
-                            QLabel, QSizePolicy)
-from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, pyqtProperty, QObject
+from PyQt6.QtWidgets import (
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QProgressBar,
+    QLabel,
+    QSizePolicy,
+)
+from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QObject
+from PyQt6.QtCore import pyqtProperty  # type: ignore[attr-defined]
 from PyQt6.QtGui import QPalette, QColor
 
 logger = logging.getLogger(__name__)
@@ -14,17 +21,17 @@ BLUE_COLOR = QColor("#2196F3")
 
 class ColorInterpolator(QObject):
     """Helper class to handle color interpolation for smooth transitions."""
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self._color = ORANGE_COLOR
+        self._color: QColor = ORANGE_COLOR
 
-    @pyqtProperty(QColor)
-    def color(self):
+    def _get_color(self) -> QColor:
         return self._color
 
-    @color.setter
-    def color(self, color):
+    def _set_color(self, color: QColor) -> None:
         self._color = color
+
+    color = pyqtProperty(QColor, fget=_get_color, fset=_set_color)  # type: ignore[misc]
 
 class ModernProgressBar(QProgressBar):
     """Custom progress bar with smooth color transitions."""

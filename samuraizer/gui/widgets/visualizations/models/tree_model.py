@@ -3,9 +3,7 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from PyQt6.QtCore import (
-    Qt, QAbstractItemModel, QModelIndex
-)
+from PyQt6.QtCore import Qt, QAbstractItemModel, QModelIndex
 from PyQt6.QtGui import QColor
 
 logger = logging.getLogger(__name__)
@@ -72,7 +70,7 @@ class ResultsTreeModel(QAbstractItemModel):
             return self.createIndex(row, column, child_item)
         return QModelIndex()
 
-    def parent(self, index: QModelIndex) -> QModelIndex:
+    def parent(self, index: QModelIndex) -> QModelIndex:  # type: ignore[override]
         if not index.isValid():
             return QModelIndex()
 

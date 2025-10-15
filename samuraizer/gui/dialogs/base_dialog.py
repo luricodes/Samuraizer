@@ -263,7 +263,7 @@ class BaseDialog(QDialog):
         """
         QMessageBox.critical(self, title, message)
 
-    def showEvent(self, event: QShowEvent) -> None:
+    def showEvent(self, event: Optional[QShowEvent]) -> None:
         """Handle dialog show event."""
         try:
             super().showEvent(event)
@@ -273,7 +273,7 @@ class BaseDialog(QDialog):
         except Exception as e:
             logger.error(f"Error in show event: {e}", exc_info=True)
 
-    def closeEvent(self, event: QCloseEvent) -> None:
+    def closeEvent(self, event: Optional[QCloseEvent]) -> None:
         """Handle dialog close event."""
         try:
             if self._is_initialized:
@@ -282,9 +282,10 @@ class BaseDialog(QDialog):
             super().closeEvent(event)
         except Exception as e:
             logger.error(f"Error in close event: {e}", exc_info=True)
-            event.accept()  # Ensure dialog closes even if there's an error
+            if event is not None:
+                event.accept()  # Ensure dialog closes even if there's an error
 
-    def resizeEvent(self, event: QResizeEvent) -> None:
+    def resizeEvent(self, event: Optional[QResizeEvent]) -> None:
         """Handle resize events."""
         try:
             super().resizeEvent(event)
@@ -293,7 +294,7 @@ class BaseDialog(QDialog):
         except Exception as e:
             logger.error(f"Error in resize event: {e}", exc_info=True)
 
-    def moveEvent(self, event: QMoveEvent) -> None:
+    def moveEvent(self, event: Optional[QMoveEvent]) -> None:
         """Handle move events."""
         try:
             super().moveEvent(event)

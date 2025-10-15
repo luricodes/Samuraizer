@@ -1,22 +1,44 @@
 # samuraizer/gui/dialogs/export/groups/output_file.py
-import os
-from typing import Optional
 import logging
+import os
 from pathlib import Path
+from typing import Optional, TYPE_CHECKING
+
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QLineEdit,
-    QPushButton, QFileDialog, QMessageBox
+    QWidget,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QFileDialog,
+    QMessageBox,
 )
 
 from ..base import BaseExportGroup
 
+if TYPE_CHECKING:
+    from ..export_dialog import ExportDialog
+
 logger = logging.getLogger(__name__)
+
 
 class OutputFileGroup(BaseExportGroup):
     """Group for output file selection."""
-    
+
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__("Output File", parent)
+
+    def _parent_dialog(self) -> Optional["ExportDialog"]:
+        parent = self.parent()
+        if isinstance(parent, BaseExportGroup):
+            # Parent of the group is the dialog
+            parent = parent.parent()
+        if parent is None:
+            return None
+        try:
+            from ..export_dialog import ExportDialog
+        except Exception:
+            return None
+        return parent if isinstance(parent, ExportDialog) else None
 
     def setup_ui(self) -> None:
         """Set up the output file selection UI."""
@@ -46,9 +68,11 @@ class OutputFileGroup(BaseExportGroup):
     def browse_output_location(self) -> None:
         """Open file dialog to select output location."""
         try:
-            # Get format from format selection group
-            export_formats = self.parent().format_group.EXPORT_FORMATS
-            format_name = self.parent().format_group.format_combo.currentText()
+            dialog = self._parent_dialog()
+            if dialog is None:
+                return
+            export_formats = dialog.format_group.EXPORT_FORMATS
+            format_name = dialog.format_group.format_combo.currentText()
             extension = export_formats[format_name][0]
             
             file_path, _ = QFileDialog.getSaveFileName(
@@ -63,11 +87,12 @@ class OutputFileGroup(BaseExportGroup):
                 if not file_path.lower().endswith(extension):
                     file_path += extension
                 self.path_input.setText(file_path)
-                
+
         except Exception as e:
             logger.error(f"Error browsing output location: {e}", exc_info=True)
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error("File Selection Error", str(e))
+            dialog = self._parent_dialog()
+            if dialog is not None:
+                dialog.show_error("File Selection Error", str(e))
 
     def validate_output_path(self, path: str) -> bool:
         """Validate the output file path."""
@@ -93,10 +118,11 @@ class OutputFileGroup(BaseExportGroup):
         """Validate the output configuration."""
         try:
             if not self.path_input.text().strip():
-                if hasattr(self.parent(), 'show_error'):
-                    self.parent().show_error(
+                dialog = self._parent_dialog()
+                if dialog is not None:
+                    dialog.show_error(
                         "Invalid Configuration",
-                        "Please select an output file location."
+                        "Please select an output file location.",
                     )
                 return False
 
@@ -108,19 +134,21 @@ class OutputFileGroup(BaseExportGroup):
                 try:
                     output_dir.mkdir(parents=True, exist_ok=True)
                 except Exception as e:
-                    if hasattr(self.parent(), 'show_error'):
-                        self.parent().show_error(
+                    dialog = self._parent_dialog()
+                    if dialog is not None:
+                        dialog.show_error(
                             "Invalid Output Location",
-                            f"Cannot create output directory: {str(e)}"
+                            f"Cannot create output directory: {str(e)}",
                         )
                     return False
 
             # Check if location is writable
             if not os.access(output_dir, os.W_OK):
-                if hasattr(self.parent(), 'show_error'):
-                    self.parent().show_error(
+                dialog = self._parent_dialog()
+                if dialog is not None:
+                    dialog.show_error(
                         "Invalid Output Location",
-                        "Output location is not writable"
+                        "Output location is not writable",
                     )
                 return False
 
@@ -128,8 +156,9 @@ class OutputFileGroup(BaseExportGroup):
             
         except Exception as e:
             logger.error(f"Error validating output configuration: {e}", exc_info=True)
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error("Validation Error", str(e))
+            dialog = self._parent_dialog()
+            if dialog is not None:
+                dialog.show_error("Validation Error", str(e))
             return False
 
     def load_settings(self) -> None:

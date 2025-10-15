@@ -38,7 +38,10 @@ class DescriptionSection(QWidget):
         Args:
             features: List of feature descriptions to display
         """
+        layout = self.layout()
+        if layout is None:
+            return
         for feature in features:
             feature_label = QLabel(feature)
             feature_label.setWordWrap(True)
-            self.layout().addWidget(feature_label)
+            layout.addWidget(feature_label)

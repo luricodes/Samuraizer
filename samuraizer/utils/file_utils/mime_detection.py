@@ -1,6 +1,6 @@
 # samuraizer/utils/mime_type.py
 
-import magic
+import magic  # type: ignore[import-untyped]
 import threading
 from colorama import Fore, Style
 import logging

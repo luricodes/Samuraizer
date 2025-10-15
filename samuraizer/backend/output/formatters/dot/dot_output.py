@@ -1,9 +1,15 @@
 import logging
-from typing import Dict, Any
 from pathlib import Path
+from typing import Any, Dict, Optional
+
 from colorama import Fore, Style
 
-def output_to_dot(data: Dict[str, Any], output_file: str, config: Dict[str, Any] = None) -> None:
+
+def output_to_dot(
+    data: Dict[str, Any],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Generates a DOT file based on the repository structure.
     Includes file contents and metadata in the node labels.
@@ -34,7 +40,7 @@ def output_to_dot(data: Dict[str, Any], output_file: str, config: Dict[str, Any]
             dot_file.write('    node [shape=box, style=filled, color="#ADD8E6"];\n')
             dot_file.write(f"    rankdir={rankdir};\n")
 
-            def traverse(node: Dict[str, Any], parent_id: str = None):
+            def traverse(node: Dict[str, Any], parent_id: Optional[str] = None) -> None:
                 for key, value in node.items():
                     # Use the relative path as a unique ID, replace problematic characters
                     unique_id = sanitize_dot_id(str(Path(key).resolve()))

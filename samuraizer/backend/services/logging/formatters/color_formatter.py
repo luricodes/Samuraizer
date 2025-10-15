@@ -2,7 +2,8 @@
 
 import logging
 import datetime
-from typing import Dict, Any
+from typing import Any, Dict, Optional
+from typing import Literal
 from colorama import Fore, Style
 from .....utils.color_support import color_support
 
@@ -31,9 +32,9 @@ class ColorFormatter(logging.Formatter):
 
     def __init__(
         self,
-        fmt: str = None,
-        datefmt: str = None,
-        style: str = '%',
+        fmt: Optional[str] = None,
+        datefmt: Optional[str] = None,
+        style: Literal['%', '{', '$'] = '%',
         validate: bool = True
     ):
         super().__init__(
@@ -89,7 +90,11 @@ class ColorFormatter(logging.Formatter):
             record.msg = orig_msg
             record.levelname = orig_levelname
 
-    def formatTime(self, record: logging.LogRecord, datefmt: str = None) -> str:
+    def formatTime(
+        self,
+        record: logging.LogRecord,
+        datefmt: Optional[str] = None,
+    ) -> str:
         """
         Format the time with millisecond precision.
         

@@ -3,7 +3,9 @@
 import json
 import logging
 import os
-from typing import Any, Dict, Generator
+from types import TracebackType
+from typing import Any, Dict, Generator, Optional, TextIO
+
 from samuraizer.utils.time_utils import format_timestamp
 from colorama import Fore, Style
 
@@ -15,18 +17,20 @@ class JSONStreamWriter:
 
     def __init__(self, output_file: str, pretty_print: bool = True):
         self.output_file = output_file
-        self.file = None
+        self.file: Optional[TextIO] = None
         self.first_entry = True
         self.pretty_print = pretty_print
         self.indent = 4 if pretty_print else None
 
-    def __enter__(self):
+    def __enter__(self) -> "JSONStreamWriter":
         self.file = open(self.output_file, 'w', encoding='utf-8')
         self.file.write('{\n' if self.pretty_print else '{')
         self.file.write('  "structure": [\n' if self.pretty_print else '"structure":[')
         return self
 
     def write_entry(self, data: Dict[str, Any]) -> None:
+        if self.file is None:
+            raise RuntimeError("JSONStreamWriter not initialized. Call __enter__ first.")
         if not self.first_entry:
             self.file.write(',\n' if self.pretty_print else ',')
         else:
@@ -34,6 +38,8 @@ class JSONStreamWriter:
         json.dump(data, self.file, ensure_ascii=False, indent=self.indent)
 
     def write_summary(self, summary: Dict[str, Any]) -> None:
+        if self.file is None:
+            raise RuntimeError("JSONStreamWriter not initialized. Call __enter__ first.")
         self.file.write('\n  ],\n' if self.pretty_print else '],"summary":')
         if not self.pretty_print:
             json.dump(summary, self.file, ensure_ascii=False)
@@ -43,7 +49,12 @@ class JSONStreamWriter:
             json.dump(summary, self.file, ensure_ascii=False, indent=4)
             self.file.write('\n}\n')
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         if self.file:
             if exc_type is not None:
                 # If an exception occurred, close the JSON structure gracefully
@@ -60,7 +71,11 @@ class JSONStreamWriter:
                     )
             self.file.close()
 
-def output_to_json(data: Dict[str, Any], output_file: str, config: Dict[str, Any] = None) -> None:
+def output_to_json(
+    data: Dict[str, Any],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Writes data in JSON format to a file.
     
@@ -80,7 +95,11 @@ def output_to_json(data: Dict[str, Any], output_file: str, config: Dict[str, Any
             f"{Fore.RED}Error writing the JSON output file: {e}{Style.RESET_ALL}"
         )
 
-def output_to_json_stream(data_generator: Generator[Dict[str, Any], None, None], output_file: str, config: Dict[str, Any] = None) -> None:
+def output_to_json_stream(
+    data_generator: Generator[Dict[str, Any], None, None],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Writes the data to a JSON file in streaming mode.
 

@@ -101,7 +101,9 @@ def format_atom(value: Any, property_name: Optional[str] = None) -> str:
     if isinstance(value, (int, float)):
         if property_name in ("created", "modified"):
             return str(value)  # Keep full precision for timestamps
-        return str(int(value)) if value.is_integer() else str(value)
+        if isinstance(value, float):
+            return str(int(value)) if value.is_integer() else str(value)
+        return str(value)
     
     if isinstance(value, str):
         if not value:
@@ -233,7 +235,11 @@ def format_summary(summary: Dict[str, Any], indent: str = "") -> str:
     result.append(f"{indent})")
     return '\n'.join(result)
 
-def output_to_sexp(data: Dict[str, Any], output_file: str, config: Dict[str, Any] = None) -> None:
+def output_to_sexp(
+    data: Dict[str, Any],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Writes repository structure data to a file in S-expression format.
     
@@ -248,8 +254,7 @@ def output_to_sexp(data: Dict[str, Any], output_file: str, config: Dict[str, Any
         SExpError: If there's an error during S-expression generation.
         IOError: If there's an error writing to the file.
     """
-    if config is None:
-        config = {}
+    config = dict(config) if config is not None else {}
 
     include_content = config.get('include_content', True)
     indent_size = config.get('indent_size', 2)

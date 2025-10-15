@@ -2,9 +2,9 @@
 
 import logging
 import re
-from typing import Any, Dict
-from xml.etree.ElementTree import Element, SubElement, ElementTree, tostring
+from typing import Any, Dict, Optional
 from xml.dom import minidom
+from xml.etree.ElementTree import Element, SubElement, tostring
 
 from colorama import Fore, Style
 
@@ -76,7 +76,11 @@ def format_xml(element: Element, pretty_print: bool = True) -> str:
             return rough_string.decode('utf-8')
     return rough_string.decode('utf-8')
 
-def output_to_xml(data: Dict[str, Any], output_file: str, config: Dict[str, Any] = None) -> None:
+def output_to_xml(
+    data: Dict[str, Any],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Writes the data to an XML file with improved structure and readability.
     

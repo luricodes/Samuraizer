@@ -6,9 +6,22 @@ import shutil
 import zlib
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Generator, Union, Optional, TypeVar, Protocol, runtime_checkable, List
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    Union,
+    Optional,
+    TypeVar,
+    Protocol,
+    runtime_checkable,
+    List,
+    BinaryIO,
+)
 from dataclasses import dataclass
-import msgpack
+from types import TracebackType
+
+import msgpack  # type: ignore[import-untyped]
 from colorama import Fore, Style
 
 # Type definitions
@@ -186,7 +199,7 @@ class MessagePackStreamWriter:
         config: Optional[MessagePackConfig] = None
     ):
         self.output_file = output_file
-        self.file = None
+        self.file: Optional[BinaryIO] = None
         self.encoder = MessagePackEncoder(config)
         self.records_written = 0
         self.bytes_written = 0
@@ -197,6 +210,8 @@ class MessagePackStreamWriter:
 
     def write_entry(self, data: Dict[str, Any]) -> None:
         """Write a single entry to the MessagePack stream."""
+        if self.file is None:
+            raise RuntimeError("MessagePackStreamWriter not initialized. Call __enter__ first.")
         try:
             encoded_data = self.encoder.encode(data)
             self.file.write(encoded_data)
@@ -218,7 +233,12 @@ class MessagePackStreamWriter:
             }
             self.file.write(self.encoder.encode(error_entry))
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         if self.file:
             self.file.close()
             logging.debug(
@@ -260,7 +280,11 @@ def validate_msgpack_file(file_path: str, config: Optional[Dict[str, Any]] = Non
         logging.error(f"{Fore.RED}MessagePack validation failed: {e}{Style.RESET_ALL}")
         return False
 
-def output_to_msgpack(data: Dict[str, Any], output_file: str, config: Dict[str, Any] = None) -> None:
+def output_to_msgpack(
+    data: Dict[str, Any],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """Write data to a MessagePack file."""
     msgpack_config = MessagePackConfig.from_dict(config)
     encoder = MessagePackEncoder(msgpack_config)
@@ -298,7 +322,7 @@ def output_to_msgpack(data: Dict[str, Any], output_file: str, config: Dict[str, 
 def output_to_msgpack_stream(
     data_generator: Generator[Dict[str, Any], None, None],
     output_file: str,
-    config: Dict[str, Any] = None
+    config: Optional[Dict[str, Any]] = None
 ) -> None:
     """Write data to a MessagePack file in streaming mode."""
     msgpack_config = MessagePackConfig.from_dict(config)

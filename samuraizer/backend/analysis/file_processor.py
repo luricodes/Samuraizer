@@ -124,7 +124,13 @@ def process_file(
 
     return filename, file_info
 
-def _process_file_content(file_path: Path, include_binary: bool, image_extensions: Set[str], max_file_size: int, encoding: str) -> Dict[str, Any]:
+def _process_file_content(
+    file_path: Path,
+    include_binary: bool,
+    image_extensions: Set[str],
+    max_file_size: int,
+    encoding: Optional[str],
+) -> Dict[str, Any]:
     file_extension = file_path.suffix.lower()
     is_image = file_extension in image_extensions
 
@@ -288,8 +294,9 @@ def _add_metadata(file_info: Dict[str, Any], stat: os.stat_result) -> None:
         use_utc = bool(tz_state.get("use_utc", False))
 
         # Convert timestamps to datetime objects with proper timezone
-        if hasattr(stat, 'st_birthtime'):
-            created_dt = datetime.fromtimestamp(stat.st_birthtime, tz=timezone.utc)
+        birthtime = getattr(stat, "st_birthtime", None)
+        if isinstance(birthtime, (int, float)):
+            created_dt = datetime.fromtimestamp(birthtime, tz=timezone.utc)
             if not use_utc:
                 created_dt = created_dt.astimezone(target_tz)
             created_ts = created_dt.isoformat()

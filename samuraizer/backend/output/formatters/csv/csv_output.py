@@ -2,12 +2,18 @@
 
 import csv
 import logging
-from datetime import datetime
-from typing import Any, Dict, Generator
-from samuraizer.utils.time_utils import format_timestamp
+from typing import Any, Dict, Generator, List, Optional
+
 from colorama import Fore, Style
 
-def output_to_csv(data: Dict[str, Any], output_file: str, config: Dict[str, Any] = None) -> None:
+from samuraizer.utils.time_utils import format_timestamp
+
+
+def output_to_csv(
+    data: Dict[str, Any],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Write data to a CSV file.
     
@@ -33,7 +39,11 @@ def output_to_csv(data: Dict[str, Any], output_file: str, config: Dict[str, Any]
             f"{Fore.RED}Error writing CSV output file: {e}{Style.RESET_ALL}"
         )
 
-def output_to_csv_stream(data_generator: Generator[Dict[str, Any], None, None], output_file: str, config: Dict[str, Any] = None) -> None:
+def output_to_csv_stream(
+    data_generator: Generator[Dict[str, Any], None, None],
+    output_file: str,
+    config: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Write data to a CSV file in streaming mode.
     
@@ -66,7 +76,7 @@ def output_to_csv_stream(data_generator: Generator[Dict[str, Any], None, None], 
             f"{Fore.RED}Error writing CSV output file in streaming mode: {e}{Style.RESET_ALL}"
         )
 
-def _create_csv_row(path: str, value: Dict[str, Any]) -> list:
+def _create_csv_row(path: str, value: Dict[str, Any]) -> List[Any]:
     """Create a CSV row from file information."""
     try:
         return [

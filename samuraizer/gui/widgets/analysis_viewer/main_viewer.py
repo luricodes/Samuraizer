@@ -1,10 +1,16 @@
 import logging
-from typing import Optional, Dict, Any, TYPE_CHECKING
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
+
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QSplitter, QTabWidget, QMessageBox, QSplitterHandle
+    QWidget,
+    QVBoxLayout,
+    QSplitter,
+    QTabWidget,
+    QMessageBox,
+    QSplitterHandle,
 )
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings, pyqtBoundSignal
 from .components.progress_monitor import ProgressMonitor
 from .components.result_tabs import ResultTabs
 from .handlers.result_processor import ResultProcessor
@@ -73,8 +79,10 @@ class ResultsViewWidget(QWidget):
         self.tab_counter = 0
         self.current_progress = 0
         self.total_files = 0
-        self.gui_log_handler = None
-        self._worker_connections = []
+        self.gui_log_handler: Optional[GuiLogHandler] = None
+        self._worker_connections: List[
+            Tuple[pyqtBoundSignal, Callable[..., None]]
+        ] = []
 
         # Initialize components
         self.progress_monitor = ProgressMonitor(self)
@@ -255,11 +263,14 @@ class ResultsViewWidget(QWidget):
             self._worker_connections = []
 
             # Connect worker signals
-            connections = [
+            connections: List[Tuple[pyqtBoundSignal, Callable[..., None]]] = [
                 (self.analyzer_worker.progress, self.updateProgress),
                 (self.analyzer_worker.status, self.updateStatus),
                 (self.analyzer_worker.error, self.handleError),
-                (self.analyzer_worker.fileProcessed, self.progress_monitor.updateFileCount),
+                (
+                    self.analyzer_worker.fileProcessed,
+                    self.progress_monitor.updateFileCount,
+                ),
                 (self.analyzer_worker.finished, self.analysisFinished),
             ]
 

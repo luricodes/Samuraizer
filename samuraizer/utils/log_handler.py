@@ -1,9 +1,10 @@
 import logging
-from typing import Dict, List, Optional, Callable
-from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Deque, Dict, List, Optional
+
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 @dataclass
 class LogEntry:
@@ -45,8 +46,8 @@ class GuiLogHandler(QObject, logging.Handler):
         self.flushOnClose = False
         self._max_buffer_size = max_buffer_size
         self._batch_size = batch_size
-        self._buffer = deque(maxlen=max_buffer_size)
-        self._current_batch = []
+        self._buffer: Deque[LogEntry] = deque(maxlen=max_buffer_size)
+        self._current_batch: List[LogEntry] = []
         
         # Set up default formatter
         self.setFormatter(logging.Formatter(
@@ -74,7 +75,7 @@ class GuiLogHandler(QObject, logging.Handler):
     def setMaxBufferSize(self, size: int) -> None:
         """Set maximum number of log entries to keep in buffer."""
         # Create new buffer with new size
-        new_buffer = deque(maxlen=size)
+        new_buffer: Deque[LogEntry] = deque(maxlen=size)
         
         # If new size is smaller, only keep most recent entries
         entries = list(self._buffer)
@@ -142,7 +143,7 @@ class GuiLogHandler(QObject, logging.Handler):
         """Emit the current batch of log entries."""
         if self._current_batch:
             try:
-                batch_data = [{
+                batch_data: List[Dict[str, float | int | str]] = [{
                     'message': entry.formatted,
                     'level': entry.level,
                     'color': entry.color,
