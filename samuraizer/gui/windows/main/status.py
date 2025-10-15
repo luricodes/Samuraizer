@@ -1,5 +1,5 @@
 # windows/main/status.py
-from typing import TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 import logging
 from PyQt6.QtWidgets import QStatusBar
 from PyQt6.QtCore import Qt
@@ -42,9 +42,9 @@ class MainStatusBar(QStatusBar):
             logger.error(f"Error setting up status bar: {e}", exc_info=True)
             raise
         
-    def showMessage(self, message: str, timeout: int = 0) -> None:
+    def showMessage(self, message: Optional[str], timeout: int = 0) -> None:
         """Show a status message.
-        
+
         Args:
             message: Status message to display
             timeout: Message display duration in milliseconds (0 = permanent)
@@ -52,7 +52,7 @@ class MainStatusBar(QStatusBar):
         try:
             # Log the status update
             logger.debug(f"Status update: {message}")
-            
+
             # Show message with alignment
             super().showMessage(message, timeout)
             

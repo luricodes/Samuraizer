@@ -2,6 +2,8 @@ from typing import Optional
 import logging
 from enum import Enum, auto
 from typing import TYPE_CHECKING
+from PyQt6.QtWidgets import QStatusBar
+
 from samuraizer.gui.windows.base.window import BaseWindow
 if TYPE_CHECKING:
     from samuraizer.gui.windows.main.panels import LeftPanel, RightPanel
@@ -32,16 +34,19 @@ class UIStateManager:
     def _update_ui_for_state(self) -> None:
         """Update UI elements based on current analysis state."""
         try:
+            status_bar: Optional[QStatusBar] = getattr(self.parent, "status_bar", None)
             if self._analysis_state == AnalysisState.RUNNING:
                 self.left_panel.analyze_btn.setEnabled(False)
                 self.left_panel.stop_btn.setEnabled(True)
                 self.right_panel.showProgress()
-                self.parent.status_bar.showMessage("Analysis in progress...")
+                if status_bar is not None:
+                    status_bar.showMessage("Analysis in progress...")
             elif self._analysis_state == AnalysisState.COMPLETED:
                 self.left_panel.analyze_btn.setEnabled(True)
                 self.left_panel.stop_btn.setEnabled(False)
                 self.right_panel.hideProgress()
-                self.parent.status_bar.showMessage("Analysis completed successfully")
+                if status_bar is not None:
+                    status_bar.showMessage("Analysis completed successfully")
             elif self._analysis_state == AnalysisState.ERROR:
                 self.left_panel.analyze_btn.setEnabled(True)
                 self.left_panel.stop_btn.setEnabled(False)
@@ -50,6 +55,7 @@ class UIStateManager:
                 self.left_panel.analyze_btn.setEnabled(True)
                 self.left_panel.stop_btn.setEnabled(False)
                 self.right_panel.hideProgress()
-                self.parent.status_bar.showMessage("Ready")
+                if status_bar is not None:
+                    status_bar.showMessage("Ready")
         except Exception as e:
             logger.error(f"Error updating UI state: {e}", exc_info=True)

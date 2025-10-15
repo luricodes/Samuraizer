@@ -1,6 +1,6 @@
 # samuraizer/gui/dialogs/components/settings/groups/theme_settings.py
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, cast
 import logging
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QLabel,
@@ -10,6 +10,9 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from ..base import BaseSettingsGroup
+
+if TYPE_CHECKING:
+    from ..settings_dialog import SettingsDialog
 from samuraizer.gui.app.theme_manager import ThemeManager
 
 logger = logging.getLogger(__name__)
@@ -46,13 +49,17 @@ class ThemeSettingsGroup(BaseSettingsGroup):
             logger.error(f"Error setting up theme settings UI: {e}", exc_info=True)
             raise
 
-    def get_settings_dialog(self) -> Optional[QWidget]:
+    def get_settings_dialog(self) -> Optional['SettingsDialog']:
         """Get the settings dialog by traversing up the widget hierarchy."""
+        try:
+            from ..settings_dialog import SettingsDialog  # Local import to avoid circular
+        except Exception:  # pragma: no cover - defensive
+            return None
+
         parent = self.parent()
         while parent is not None:
-            # Check if this parent is the settings dialog
-            if parent.__class__.__name__ == 'SettingsDialog':
-                return parent
+            if isinstance(parent, SettingsDialog):
+                return cast('SettingsDialog', parent)
             parent = parent.parent()
         return None
 
@@ -69,16 +76,16 @@ class ThemeSettingsGroup(BaseSettingsGroup):
                 
                 # Get the settings dialog and main window
                 settings_dialog = self.get_settings_dialog()
-                if settings_dialog and settings_dialog.parent():
+                if settings_dialog is not None:
                     main_window = settings_dialog.parent()
-                    if hasattr(main_window, 'toggle_theme'):
-                        # Call the main window's theme toggle with the new theme
+                    if isinstance(main_window, QWidget) and hasattr(main_window, 'toggle_theme'):
                         main_window.toggle_theme(theme)
-                    
+
         except Exception as e:
             logger.error(f"Error changing theme: {e}", exc_info=True)
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error("Theme Error", str(e))
+            parent_dialog = self.get_settings_dialog()
+            if parent_dialog is not None:
+                parent_dialog.show_error("Theme Error", str(e))
 
     def load_settings(self) -> None:
         """Load theme settings."""

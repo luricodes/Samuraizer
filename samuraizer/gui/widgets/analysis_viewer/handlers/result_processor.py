@@ -54,6 +54,7 @@ class ResultProcessor:
             output_format = self.getOutputFormat()
             logger.debug(f"Creating result view with format: {output_format}")
             
+            view: QWidget
             if output_format in ['json', 'yaml', 'messagepack']:
                 view = JsonTreeView(results)
             elif output_format == 'dot':

@@ -176,12 +176,7 @@ class RightPanel(ResultsViewWidget):
                 raise ValueError("No output path specified")
                 
             # Export results
-            self.exportResults(
-                data,
-                output_path,
-                output_config.get('format', 'json'),
-                output_config.get('use_compression', False)
-            )
+            self.exportResults(data, output_path)
             
             logger.info(f"Results saved to {output_path}")
             self.progress_monitor.updateStatus(f"Results saved to {output_path}")

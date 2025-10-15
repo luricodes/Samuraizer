@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGraphicsView,
@@ -76,8 +76,12 @@ class ZoomableGraphicsView(QGraphicsView):
         # Update the viewport
         self.viewport().update()
 
-    def wheelEvent(self, event: QWheelEvent):
+    def wheelEvent(self, event: Optional[QWheelEvent]) -> None:
         """Handle mouse wheel events for zooming"""
+        if event is None:
+            super().wheelEvent(event)
+            return
+
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             # Calculate zoom factor
             zoom_in_factor = 1.15
@@ -96,26 +100,34 @@ class ZoomableGraphicsView(QGraphicsView):
             if self.min_zoom <= new_zoom <= self.max_zoom:
                 self.zoom_factor = new_zoom
                 
+                viewport = self.viewport()
+                if viewport is None:
+                    return
+
                 # Store center point
-                center_point = self.mapToScene(self.viewport().rect().center())
-                
+                center_point = self.mapToScene(viewport.rect().center())
+
                 # Apply new transform
                 self.setTransform(QTransform().scale(self.zoom_factor, self.zoom_factor))
-                
+
                 # Restore center point
-                new_center = self.mapToScene(self.viewport().rect().center())
+                new_center = self.mapToScene(viewport.rect().center())
                 delta = new_center - center_point
                 self.translate(delta.x(), delta.y())
-                
+
                 # Update the view
-                self.viewport().update()
-                
+                viewport.update()
+
             event.accept()
         else:
             super().wheelEvent(event)
 
-    def keyPressEvent(self, event: QKeyEvent):
+    def keyPressEvent(self, event: Optional[QKeyEvent]) -> None:
         """Handle keyboard shortcuts for zooming"""
+        if event is None:
+            super().keyPressEvent(event)
+            return
+
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             if event.key() == Qt.Key.Key_Plus:
                 self.zoom(1.15)
@@ -137,54 +149,63 @@ class ZoomableGraphicsView(QGraphicsView):
         if self.min_zoom <= new_zoom <= self.max_zoom:
             self.zoom_factor = new_zoom
             
+            viewport = self.viewport()
+            if viewport is None:
+                return
+
             # Store center point
-            center_point = self.mapToScene(self.viewport().rect().center())
-            
+            center_point = self.mapToScene(viewport.rect().center())
+
             # Apply new transform
             self.setTransform(QTransform().scale(self.zoom_factor, self.zoom_factor))
-            
+
             # Restore center point
-            new_center = self.mapToScene(self.viewport().rect().center())
+            new_center = self.mapToScene(viewport.rect().center())
             delta = new_center - center_point
             self.translate(delta.x(), delta.y())
-            
-            self.viewport().update()
+
+            viewport.update()
 
     def reset_zoom(self):
         """Reset zoom to original size"""
+        viewport = self.viewport()
+        if viewport is None:
+            return
+
         # Store center point
-        center_point = self.mapToScene(self.viewport().rect().center())
-        
+        center_point = self.mapToScene(viewport.rect().center())
+
         # Reset transform and zoom factor
         self.zoom_factor = 1.0
         self.setTransform(QTransform().scale(1.0, 1.0))
-        
+
         # Restore center point
-        new_center = self.mapToScene(self.viewport().rect().center())
+        new_center = self.mapToScene(viewport.rect().center())
         delta = new_center - center_point
         self.translate(delta.x(), delta.y())
-        
+
         # Ensure view is enabled and interactive
         self.setInteractive(True)
         self.setEnabled(True)
-        
-        self.viewport().update()
+
+        viewport.update()
 
     def fit_in_view(self):
         """Fit scene in view"""
-        if not self.scene() or self.scene().sceneRect().isEmpty():
+        scene = self.scene()
+        if scene is None or scene.sceneRect().isEmpty():
             return
-            
+
         # Store current anchor
         old_anchor = self.transformationAnchor()
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
-        
+
         # Reset transform first
         self.resetTransform()
-        
+
         # Fit in view
-        self.fitInView(self.scene().sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
-        
+        self.fitInView(scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+
         # Update zoom factor based on current transform
         self.zoom_factor = self.transform().m11()
         

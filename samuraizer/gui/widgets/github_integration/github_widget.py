@@ -1,7 +1,7 @@
 # samuraizer/gui/widgets/configuration/repository/github/github_widget.py
 
 import logging
-from typing import Optional, Dict
+from typing import Any, Optional, Dict
 from pathlib import Path
 import shutil  # Added for directory operations
 
@@ -29,9 +29,9 @@ class GitHubWidget(QWidget):
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.clone_worker = None
-        self.temp_dir = None
-        self.repo_info = None
+        self.clone_worker: Optional[GitCloneWorker] = None
+        self.temp_dir: Optional[Path] = None
+        self.repo_info: Optional[Dict[str, Any]] = None
         self._cloning_branch: Optional[str] = None
         self.auth_manager = GitHubAuthManager()
         self._setup_ui()
@@ -117,7 +117,7 @@ class GitHubWidget(QWidget):
             
             try:
                 # Fetch repository information
-                self.repo_info = fetch_repo_info(url, self.auth_manager.get_access_token())
+                self.repo_info = fetch_repo_info(url, self.auth_manager)
                 if self.repo_info:
                     # Update status with repository information
                     info_text = (
@@ -131,7 +131,7 @@ class GitHubWidget(QWidget):
                     logger.info(f"Fetched repository info: {self.repo_info.get('name')}")
                     
                     # Fetch and populate branches
-                    branches = get_repo_branches(url, self.auth_manager.get_access_token())
+                    branches = get_repo_branches(url, self.auth_manager)
                     if branches:
                         self.branch_combo.clear()
                         self.branch_combo.addItem("default")

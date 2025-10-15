@@ -2,7 +2,9 @@
 
 import logging
 import sys
-from PyQt6.QtWidgets import QApplication
+from typing import Optional
+
+from PyQt6.QtWidgets import QApplication, QWidget
 from PyQt6.QtCore import QSettings, Qt
 import qdarktheme
 
@@ -115,9 +117,13 @@ class ThemeManager:
             app.setPalette(qdarktheme.load_palette(theme=theme))
             
             # Force an update of all widgets
+            fallback_style = app.style()
             for widget in app.allWidgets():
-                widget.style().unpolish(widget)
-                widget.style().polish(widget)
+                style = widget.style() or fallback_style
+                if style is None:
+                    continue
+                style.unpolish(widget)
+                style.polish(widget)
                 widget.update()
             
             logger.debug(f"{theme.capitalize()} theme applied successfully")
@@ -125,7 +131,7 @@ class ThemeManager:
             logger.error(f"Error applying theme: {e}")
     
     @classmethod
-    def toggle_theme(cls, app: QApplication, window, theme: str = None) -> None:
+    def toggle_theme(cls, app: QApplication, window: QWidget, theme: Optional[str] = None) -> None:
         """Toggle between light and dark themes or apply specific theme.
         
         Args:

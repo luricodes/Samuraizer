@@ -135,6 +135,31 @@ class LogPanel(QWidget):
         toolbar.addWidget(buffer_container)
         toolbar.addSeparator()
 
+        # Add search controls
+        search_container = QWidget()
+        search_layout = QHBoxLayout(search_container)
+        search_layout.setContentsMargins(0, 0, 0, 0)
+        search_layout.setSpacing(6)
+
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search logs…")
+        self.search_input.textChanged.connect(self.searchLogs)
+        self.search_input.returnPressed.connect(self.findNext)
+        search_layout.addWidget(self.search_input)
+
+        self.prev_button = QPushButton("Previous")
+        self.prev_button.setEnabled(False)
+        self.prev_button.clicked.connect(lambda: self.findPrevious())
+        search_layout.addWidget(self.prev_button)
+
+        self.next_button = QPushButton("Next")
+        self.next_button.setEnabled(False)
+        self.next_button.clicked.connect(lambda: self.findNext())
+        search_layout.addWidget(self.next_button)
+
+        toolbar.addWidget(search_container)
+        toolbar.addSeparator()
+
         # Add clear and save buttons
         clear_btn = QPushButton("Clear")
         clear_btn.clicked.connect(self.clearLog)

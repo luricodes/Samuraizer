@@ -81,7 +81,7 @@ class MainWindow(BaseWindow):
 
     def _initialize_cache(self) -> None:
         """Initialize the cache database connection pool."""
-        pool = None
+        pool_initialized = False
         try:
             config_manager = UnifiedConfigManager()
             config = config_manager.get_active_profile_config()
@@ -101,17 +101,18 @@ class MainWindow(BaseWindow):
 
             set_cache_disabled(cache_disabled)
 
-            pool = initialize_connection_pool(
+            initialize_connection_pool(
                 str(cache_db_path.absolute()),
                 thread_count=thread_count,
                 force_disable_cache=cache_disabled
             )
+            pool_initialized = True
             logger.info(f"Connection pool initialized with cache at: {cache_db_path.absolute()}")
             logger.info(f"Cache settings - Disabled: {cache_disabled}, Thread Count: {thread_count}")
             
         except Exception as e:
             logger.error(f"Failed to initialize connection pool: {e}", exc_info=True)
-            if pool:
+            if pool_initialized:
                 try:
                     close_all_connections()
                 except Exception as cleanup_error:
@@ -226,7 +227,7 @@ class MainWindow(BaseWindow):
 
     def _sync_theme_from_config(self) -> None:
         app = QApplication.instance()
-        if app is None:
+        if not isinstance(app, QApplication):
             return
         try:
             theme = ThemeManager.get_saved_theme()

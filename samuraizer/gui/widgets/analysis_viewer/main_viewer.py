@@ -428,7 +428,7 @@ class ResultsViewWidget(QWidget):
                 # Show export dialog for manual export
                 dialog = ExportDialog(self)
                 if dialog.exec():
-                    format_name, file_path = dialog.getExportOptions()
+                    format_name, file_path = dialog.get_export_options()
                     # Implement export logic here
                     self.progress_monitor.updateStatus(f"Results exported to {file_path}")
         except Exception as e:

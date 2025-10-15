@@ -1,9 +1,12 @@
 # samuraizer/gui/widgets/configuration/repository/github/widgets/github_issues_widget.py
 
+from typing import Any, Dict, List, Optional
+
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QHBoxLayout, QLineEdit, QTextEdit, QLabel
+    QWidget, QVBoxLayout, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QHBoxLayout, QLineEdit, QTextEdit, QLabel,
+    QGridLayout
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt
 
 import logging
 import requests
@@ -15,12 +18,12 @@ logger = logging.getLogger(__name__)
 class GitHubIssuesWidget(QWidget):
     """Widget for displaying and managing GitHub issues."""
     
-    def __init__(self, auth_manager: GitHubAuthManager, repo_owner: str, repo_name: str, parent=None):
+    def __init__(self, auth_manager: GitHubAuthManager, repo_owner: str, repo_name: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.auth_manager = auth_manager
         self.repo_owner = repo_owner
         self.repo_name = repo_name
-        self.issues = []
+        self.issues: List[Dict[str, Any]] = []
         self.init_ui()
         self.fetch_issues()
     
@@ -64,7 +67,11 @@ class GitHubIssuesWidget(QWidget):
         
         response = requests.get(url, headers=headers)
         if response.status_code == 200:
-            self.issues = response.json()
+            data = response.json()
+            if isinstance(data, list):
+                self.issues = [issue for issue in data if isinstance(issue, dict)]
+            else:
+                self.issues = []
             self.populate_issues()
         else:
             logger.error(f"Failed to fetch issues: {response.status_code} {response.text}")
@@ -94,23 +101,24 @@ class GitHubIssuesWidget(QWidget):
 class CreateIssueDialog(QMessageBox):
     """Dialog for creating a new GitHub issue."""
     
-    def __init__(self, auth_manager: GitHubAuthManager, repo_owner: str, repo_name: str, parent=None):
+    def __init__(self, auth_manager: GitHubAuthManager, repo_owner: str, repo_name: str, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.auth_manager = auth_manager
         self.repo_owner = repo_owner
         self.repo_name = repo_name
         self.setWindowTitle("Create New Issue")
         self.setIcon(QMessageBox.Icon.Question)
-        
+
         # Setup layout
-        self.layout = self.layout()
+        dialog_layout = self.layout()
         self.title_input = QLineEdit()
         self.body_input = QTextEdit()
-        
-        self.layout.addWidget(QLabel("Title:"), 1, 0)
-        self.layout.addWidget(self.title_input, 1, 1)
-        self.layout.addWidget(QLabel("Description:"), 2, 0)
-        self.layout.addWidget(self.body_input, 2, 1)
+
+        if isinstance(dialog_layout, QGridLayout):
+            dialog_layout.addWidget(QLabel("Title:"), 1, 0)
+            dialog_layout.addWidget(self.title_input, 1, 1)
+            dialog_layout.addWidget(QLabel("Description:"), 2, 0)
+            dialog_layout.addWidget(self.body_input, 2, 1)
         
         self.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
         self.addButton("Create", QMessageBox.ButtonRole.AcceptRole)

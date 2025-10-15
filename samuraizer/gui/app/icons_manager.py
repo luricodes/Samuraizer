@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict
 from PyQt6.QtGui import QIcon, QPixmap
-from PyQt6.QtCore import QSize
+from PyQt6.QtCore import QSize, Qt
 
 logger = logging.getLogger(__name__)
 

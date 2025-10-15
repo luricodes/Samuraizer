@@ -28,7 +28,9 @@ class DialogManager:
         except Exception as e:
             error_msg = f"Error showing settings: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            self.parent.status_bar.showMessage(error_msg)
+            status_bar = getattr(self.parent, "status_bar", None)
+            if status_bar is not None:
+                status_bar.showMessage(error_msg)
 
     def show_about(self) -> None:
         """Show the about dialog."""
@@ -38,4 +40,6 @@ class DialogManager:
         except Exception as e:
             error_msg = f"Error showing about: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            self.parent.status_bar.showMessage(error_msg)
+            status_bar = getattr(self.parent, "status_bar", None)
+            if status_bar is not None:
+                status_bar.showMessage(error_msg)

@@ -57,34 +57,40 @@ class AnalysisConfig:
     filters: FiltersConfig
     output: OutputConfig
 
-    def to_dict(self) -> Dict[str, Dict[str, object]]:
+    def to_dict(self) -> Dict[str, object]:
         """Convert the dataclass hierarchy into a worker friendly dictionary."""
 
+        repository_config: Dict[str, object] = {
+            "repository_path": self.repository.repository_path,
+            "max_file_size": self.repository.max_file_size,
+            "include_binary": self.repository.include_binary,
+            "follow_symlinks": self.repository.follow_symlinks,
+            "encoding": self.repository.encoding,
+            "hash_algorithm": self.repository.hash_algorithm,
+            "thread_count": self.repository.thread_count,
+            "image_extensions": list(self.repository.image_extensions),
+            "cache_path": self.repository.cache_path,
+        }
+
+        filters_config: Dict[str, object] = {
+            "excluded_folders": list(self.filters.excluded_folders),
+            "excluded_files": list(self.filters.excluded_files),
+            "exclude_patterns": list(self.filters.exclude_patterns),
+        }
+
+        output_config: Dict[str, object] = {
+            "format": self.output.format,
+            "output_path": self.output.output_path,
+            "streaming": self.output.streaming,
+            "include_summary": self.output.include_summary,
+            "pretty_print": self.output.pretty_print,
+            "use_compression": self.output.use_compression,
+        }
+
         return {
-            "repository": {
-                "repository_path": self.repository.repository_path,
-                "max_file_size": self.repository.max_file_size,
-                "include_binary": self.repository.include_binary,
-                "follow_symlinks": self.repository.follow_symlinks,
-                "encoding": self.repository.encoding,
-                "hash_algorithm": self.repository.hash_algorithm,
-                "thread_count": self.repository.thread_count,
-                "image_extensions": list(self.repository.image_extensions),
-                "cache_path": self.repository.cache_path,
-            },
-            "filters": {
-                "excluded_folders": list(self.filters.excluded_folders),
-                "excluded_files": list(self.filters.excluded_files),
-                "exclude_patterns": list(self.filters.exclude_patterns),
-            },
-            "output": {
-                "format": self.output.format,
-                "output_path": self.output.output_path,
-                "streaming": self.output.streaming,
-                "include_summary": self.output.include_summary,
-                "pretty_print": self.output.pretty_print,
-                "use_compression": self.output.use_compression,
-            },
+            "repository": repository_config,
+            "filters": filters_config,
+            "output": output_config,
         }
 
 

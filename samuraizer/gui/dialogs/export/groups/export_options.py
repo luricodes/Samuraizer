@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, Protocol, cast
 import logging
 from PyQt6.QtWidgets import (
     QWidget, QFormLayout, QCheckBox,
@@ -7,6 +7,17 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from ..base import BaseExportGroup
+from .format_selection import FormatSelectionGroup
+
+if TYPE_CHECKING:
+    from ..export_dialog import ExportDialog
+
+
+class _ExportDialogProtocol(Protocol):
+    format_group: FormatSelectionGroup
+
+    def show_error(self, title: str, message: str) -> None:
+        ...
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +26,19 @@ class ExportOptionsGroup(BaseExportGroup):
     
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__("Export Options", parent)
+
+    def _get_parent_dialog(self) -> Optional['_ExportDialogProtocol']:
+        parent = self.parent()
+        if parent is None:
+            return None
+        try:
+            from ..export_dialog import ExportDialog  # Local import to avoid circular dependency
+        except Exception:  # pragma: no cover - defensive guard
+            return None
+
+        if isinstance(parent, ExportDialog):
+            return cast('_ExportDialogProtocol', parent)
+        return None
 
     def setup_ui(self) -> None:
         """Set up the export options UI."""
@@ -59,20 +83,25 @@ class ExportOptionsGroup(BaseExportGroup):
         """Handle streaming option changes."""
         try:
             if state == Qt.CheckState.Checked.value:
-                format_name = self.parent().format_group.format_combo.currentText()
-                if format_name.upper() not in ["JSON", "JSONL", "MESSAGEPACK"]:
-                    if hasattr(self.parent(), 'show_error'):
-                        self.parent().show_error(
-                            "Invalid Configuration",
-                            "Streaming is only available for JSON, JSONL, "
-                            "and MessagePack formats."
-                        )
+                dialog = self._get_parent_dialog()
+                if dialog is None:
+                    logger.warning("Streaming changed without a valid export dialog parent")
                     self.enable_streaming.setChecked(False)
-                
+                    return
+                format_name = dialog.format_group.format_combo.currentText()
+                if format_name.upper() not in ["JSON", "JSONL", "MESSAGEPACK"]:
+                    dialog.show_error(
+                        "Invalid Configuration",
+                        "Streaming is only available for JSON, JSONL, "
+                        "and MessagePack formats."
+                    )
+                    self.enable_streaming.setChecked(False)
+
         except Exception as e:
             logger.error(f"Error handling streaming change: {e}", exc_info=True)
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error("Configuration Error", str(e))
+            dialog = self._get_parent_dialog()
+            if dialog is not None:
+                dialog.show_error("Configuration Error", str(e))
 
     def update_options_state(self, format_name: str) -> None:
         """Update options state based on selected format."""
@@ -90,8 +119,9 @@ class ExportOptionsGroup(BaseExportGroup):
             
         except Exception as e:
             logger.error(f"Error updating options state: {e}", exc_info=True)
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error("Configuration Error", str(e))
+            dialog = self._get_parent_dialog()
+            if dialog is not None:
+                dialog.show_error("Configuration Error", str(e))
 
     def load_settings(self) -> None:
         """Load export options settings."""

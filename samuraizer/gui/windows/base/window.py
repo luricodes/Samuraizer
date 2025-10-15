@@ -2,7 +2,7 @@
 from typing import Optional
 import logging
 import sys
-from PyQt6.QtWidgets import QMainWindow
+from PyQt6.QtWidgets import QMainWindow, QStatusBar
 from PyQt6.QtCore import QSettings, QSize, QPoint, Qt
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,7 @@ class BaseWindow(QMainWindow):
         
         self.settings = QSettings()
         self.settings_prefix = settings_prefix or self.__class__.__name__.lower()
+        self.status_bar: Optional[QStatusBar] = None
         
         # Set window properties
         self.setWindowTitle(title)

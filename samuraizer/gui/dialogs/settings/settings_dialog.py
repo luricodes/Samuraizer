@@ -1,6 +1,6 @@
 # samuraizer/gui/dialogs/components/settings/settings_dialog.py
 
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, cast
 import logging
 from PyQt6.QtWidgets import QWidget, QTabWidget, QVBoxLayout
 from PyQt6.QtCore import QSize
@@ -134,4 +134,13 @@ class SettingsDialog(BaseDialog):
 
     def get_main_window(self) -> Optional['MainWindow']:
         """Get the main window instance."""
-        return self.parent()
+        parent = self.parent()
+        if parent is None:
+            return None
+        try:
+            from ...windows.main.components.window import MainWindow as MainWindowClass
+        except Exception:  # pragma: no cover - defensive
+            return None
+        if isinstance(parent, MainWindowClass):
+            return cast('MainWindow', parent)
+        return None

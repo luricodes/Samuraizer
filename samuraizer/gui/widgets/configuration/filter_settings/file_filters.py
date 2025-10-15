@@ -124,10 +124,12 @@ class EditableListWidget(QWidget):
     # ------------------------------------------------------------------
     def get_items(self) -> set[str]:
         """Get all items as a set."""
-        return {
-            self.list_widget.item(i).text()
-            for i in range(self.list_widget.count())
-        }
+        items: set[str] = set()
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if item is not None:
+                items.add(item.text())
+        return items
 
     # ------------------------------------------------------------------
     def set_items(self, items: Iterable[str]) -> None:
@@ -253,10 +255,12 @@ class PatternListWidget(QWidget):
     # ------------------------------------------------------------------
     def get_patterns(self) -> list[str]:
         """Get all patterns as a list."""
-        return [
-            self.pattern_list.item(i).text()
-            for i in range(self.pattern_list.count())
-        ]
+        patterns: list[str] = []
+        for i in range(self.pattern_list.count()):
+            item = self.pattern_list.item(i)
+            if item is not None:
+                patterns.append(item.text())
+        return patterns
 
     # ------------------------------------------------------------------
     def set_patterns(self, patterns: Iterable[str]) -> None:
@@ -398,16 +402,21 @@ class FileFiltersWidget(QWidget):
         self.preview_browse_btn = QToolButton()
         self.preview_browse_btn.setText("Browse…")
         self.preview_browse_btn.setToolTip("Choose a file or folder to test against the current filters.")
-        self.preview_browse_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
+        style = self.style()
+        if style is not None:
+            self.preview_browse_btn.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
         self.preview_browse_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
 
         preview_browse_menu = QMenu(self.preview_browse_btn)
         file_action = preview_browse_menu.addAction("Select File…")
-        file_action.triggered.connect(self._choose_preview_file)
+        if file_action is not None:
+            file_action.triggered.connect(self._choose_preview_file)
         folder_action = preview_browse_menu.addAction("Select Folder…")
-        folder_action.triggered.connect(self._choose_preview_folder)
+        if folder_action is not None:
+            folder_action.triggered.connect(self._choose_preview_folder)
         self.preview_browse_btn.setMenu(preview_browse_menu)
-        self.preview_browse_btn.setDefaultAction(file_action)
+        if file_action is not None:
+            self.preview_browse_btn.setDefaultAction(file_action)
         preview_input_row.addWidget(self.preview_browse_btn)
 
         status_row = QHBoxLayout()
@@ -751,8 +760,11 @@ class FileFiltersWidget(QWidget):
         self.preview_reason_label.setText(message)
 
         for widget in (self.preview_status_badge, self.preview_reason_label):
-            widget.style().unpolish(widget)
-            widget.style().polish(widget)
+            style = widget.style()
+            if style is None:
+                continue
+            style.unpolish(widget)
+            style.polish(widget)
             widget.update()
 
     # ------------------------------------------------------------------

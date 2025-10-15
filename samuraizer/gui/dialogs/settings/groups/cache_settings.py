@@ -1,6 +1,6 @@
 # samuraizer/gui/dialogs/components/settings/groups/cache_settings.py
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING, cast
 import logging
 import os
 import sqlite3
@@ -17,6 +17,9 @@ from samuraizer.backend.cache.connection_pool import set_cache_disabled
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
 from ..base import BaseSettingsGroup
 
+if TYPE_CHECKING:
+    from ..settings_dialog import SettingsDialog
+
 logger = logging.getLogger(__name__)
 
 class CacheSettingsGroup(BaseSettingsGroup):
@@ -24,8 +27,26 @@ class CacheSettingsGroup(BaseSettingsGroup):
     
     def __init__(self, parent: Optional[QWidget] = None):
         self._showing_cache_warning = False
-        self._initial_cache_state = None
+        self._initial_cache_state: Optional[bool] = None
         super().__init__("Cache Settings", parent)
+
+    def _get_settings_dialog(self) -> Optional['SettingsDialog']:
+        try:
+            from ..settings_dialog import SettingsDialog  # Local import to avoid circular
+        except Exception:  # pragma: no cover - defensive
+            return None
+
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, SettingsDialog):
+                return cast('SettingsDialog', parent)
+            parent = parent.parent()
+        return None
+
+    def _show_parent_error(self, title: str, message: str) -> None:
+        dialog = self._get_settings_dialog()
+        if dialog is not None:
+            dialog.show_error(title, message)
 
     def setup_ui(self) -> None:
         """Set up the cache settings UI."""
@@ -170,11 +191,10 @@ class CacheSettingsGroup(BaseSettingsGroup):
             
         except Exception as e:
             logger.error(f"Error resetting cache path: {e}")
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error(
-                    "Reset Error",
-                    f"Failed to reset cache path: {str(e)}"
-                )
+            self._show_parent_error(
+                "Reset Error",
+                f"Failed to reset cache path: {str(e)}"
+            )
 
     def select_cache_path(self) -> None:
         """Open dialog to select cache directory."""
@@ -195,20 +215,18 @@ class CacheSettingsGroup(BaseSettingsGroup):
                 try:
                     cache_path.mkdir(parents=True, exist_ok=True)
                 except Exception as e:
-                    if hasattr(self.parent(), 'show_error'):
-                        self.parent().show_error(
-                            "Path Error",
-                            f"Could not create cache directory: {str(e)}"
-                        )
+                    self._show_parent_error(
+                        "Path Error",
+                        f"Could not create cache directory: {str(e)}"
+                    )
                     return
 
                 # Check if directory is writable
                 if not os.access(cache_path, os.W_OK):
-                    if hasattr(self.parent(), 'show_error'):
-                        self.parent().show_error(
-                            "Permission Error",
-                            "Selected directory is not writable"
-                        )
+                    self._show_parent_error(
+                        "Permission Error",
+                        "Selected directory is not writable"
+                    )
                     return
 
                 # Get absolute path
@@ -229,8 +247,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
 
         except Exception as e:
             logger.error(f"Error selecting cache path: {e}", exc_info=True)
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error("Path Selection Error", str(e))
+            self._show_parent_error("Path Selection Error", str(e))
 
     def on_cache_state_changed(self, state: int) -> None:
         """Handle cache disable/enable state changes."""
@@ -280,8 +297,7 @@ class CacheSettingsGroup(BaseSettingsGroup):
 
         except Exception as e:
             logger.error(f"Error handling cache state change: {e}", exc_info=True)
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error("Settings Error", str(e))
+            self._show_parent_error("Settings Error", str(e))
 
     def load_settings(self) -> None:
         """Load cache settings."""
@@ -378,6 +394,5 @@ class CacheSettingsGroup(BaseSettingsGroup):
             
         except Exception as e:
             logger.error(f"Cache settings validation error: {e}", exc_info=True)
-            if hasattr(self.parent(), 'show_error'):
-                self.parent().show_error("Validation Error", str(e))
+            self._show_parent_error("Validation Error", str(e))
             return False

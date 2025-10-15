@@ -69,7 +69,7 @@ class RepositorySummaryCard(QFrame):
             style: Optional[QStyle] = self.style()
             if style is None:
                 app = QApplication.instance()
-                style = app.style() if app is not None else None
+                style = app.style() if isinstance(app, QApplication) else None
             if style is not None:
                 icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
         self.copy_button.setIcon(icon)
@@ -164,7 +164,7 @@ class RepositorySummaryCard(QFrame):
         """Force Qt to refresh dynamic properties on the provided widgets."""
 
         app = QApplication.instance()
-        fallback_style: Optional[QStyle] = app.style() if app is not None else None
+        fallback_style: Optional[QStyle] = app.style() if isinstance(app, QApplication) else None
 
         for widget in widgets:
             style: Optional[QStyle] = widget.style()

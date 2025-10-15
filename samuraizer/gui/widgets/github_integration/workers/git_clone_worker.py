@@ -205,7 +205,7 @@ class GitCloneWorker(QThread):
                 logger.error(f"Error calculating repository size: {e}")
 
             # Get last modification time
-            mtime = 0
+            mtime: float = 0.0
             try:
                 for entry in os.scandir(self.target_path):
                     if entry.is_file(follow_symlinks=False):
