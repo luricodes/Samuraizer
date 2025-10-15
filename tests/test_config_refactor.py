@@ -5,7 +5,7 @@ from typing import Iterator
 
 import pytest
 
-from samuraizer.config import ConfigurationManager, UnifiedConfigManager
+from samuraizer.config import UnifiedConfigManager
 
 
 @pytest.fixture
@@ -17,8 +17,6 @@ def unified_manager(
     monkeypatch.setenv("HOME", str(base / "home"))
 
     UnifiedConfigManager._instance = None  # type: ignore[attr-defined]
-    ConfigurationManager._instance = None  # type: ignore[attr-defined]
-
     manager = UnifiedConfigManager()
     config_file = base / "config" / "config.toml"
     manager.reload(config_path=config_file)
@@ -26,12 +24,7 @@ def unified_manager(
     try:
         yield manager
     finally:
-        try:
-            ConfigurationManager().cleanup()
-        except Exception:
-            pass
-        UnifiedConfigManager._instance = None  # type: ignore[attr-defined]
-        ConfigurationManager._instance = None  # type: ignore[attr-defined]
+        manager.cleanup()
 
 
 def test_unified_manager_roundtrip(unified_manager: UnifiedConfigManager) -> None:
@@ -57,18 +50,15 @@ def test_unified_manager_roundtrip(unified_manager: UnifiedConfigManager) -> Non
     assert updated.get("analysis", {}).get("max_file_size_mb") == 123
 
 
-def test_configuration_manager_profile_lifecycle(
+def test_unified_manager_profile_lifecycle(
     unified_manager: UnifiedConfigManager,
 ) -> None:
-    cfg_mgr = ConfigurationManager()
-    cfg_mgr.reload_configuration(config_path=str(unified_manager.config_path))
-    baseline = cfg_mgr.get_active_profile_config()
+    baseline = unified_manager.get_active_profile_config()
     assert "analysis" in baseline
 
     profile_name = "pytest-profile"
-    cfg_mgr.create_profile(profile_name, inherit="default")
-    assert profile_name in cfg_mgr.list_profiles()
+    unified_manager.create_profile(profile_name, inherit="default")
+    assert profile_name in unified_manager.list_profiles()
 
-    cfg_mgr.delete_profile(profile_name)
-    assert profile_name not in cfg_mgr.list_profiles()
-    cfg_mgr.cleanup()
+    unified_manager.remove_profile(profile_name)
+    assert profile_name not in unified_manager.list_profiles()

@@ -148,7 +148,10 @@ class UnifiedConfigManager:
             self._notify_change()
 
     def _validate(self, data: Dict[str, Any]) -> None:
-        errors = sorted(_validator.iter_errors(data), key=lambda e: e.path)
+        try:
+            errors = sorted(_validator.iter_errors(data), key=lambda e: getattr(e, "path", []))
+        except ImportError as exc:
+            raise ConfigValidationError(str(exc)) from exc
         if errors:
             first = errors[0]
             location = ".".join(str(part) for part in first.path)

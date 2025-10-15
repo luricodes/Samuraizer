@@ -6,7 +6,10 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-import yaml
+try:  # pragma: no cover
+    import yaml  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    yaml = None  # type: ignore[assignment]
 
 from .exceptions import ConfigMigrationError
 
@@ -46,6 +49,9 @@ def merge_legacy_exclusions(
 
 
 def migrate_from_legacy_files(raw_config: Dict[str, Any]) -> bool:
+    if yaml is None:
+        logger.debug("PyYAML not available; skipping legacy YAML migration")
+        return False
     migrated = False
     for legacy_dir in legacy_directories():
         exclusions_file = legacy_dir / "exclusions.yaml"

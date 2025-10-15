@@ -41,13 +41,7 @@ setup(
     license='GNU GPLv3',
     author_email="info@lucasrichert.tech",
     description="A versatile analysis and processing tool with GUI support",
-    packages=find_packages(include=[
-        'samuraizer',
-        'samuraizer.*',
-        'samuraizer.common',
-        'GUI',
-        'GUI.*'
-    ]),
+    packages=find_packages(include=["samuraizer", "samuraizer.*"]),
     python_requires='>=3.9',
     install_requires=install_requires,
     extras_require=extras_require,
