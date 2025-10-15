@@ -66,7 +66,12 @@ class RepositorySummaryCard(QFrame):
         self.copy_button.setObjectName("copyRepoPathButton")
         icon = QIcon.fromTheme("edit-copy")
         if icon.isNull():
-            icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+            style: Optional[QStyle] = self.style()
+            if style is None:
+                app = QApplication.instance()
+                style = app.style() if app is not None else None
+            if style is not None:
+                icon = style.standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
         self.copy_button.setIcon(icon)
         self.copy_button.setToolTip("Copy repository path to clipboard")
         self.copy_button.clicked.connect(self._copy_path_to_clipboard)
@@ -105,11 +110,15 @@ class RepositorySummaryCard(QFrame):
         if not path:
             return
 
-        QApplication.clipboard().setText(path)
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            logger.warning("Unable to copy repository path: clipboard unavailable.")
+            return
+
+        clipboard.setText(path)
         self.feedback_label.setText("Path copied to clipboard.")
         self.feedback_label.setProperty("highlight", True)
-        self.feedback_label.style().unpolish(self.feedback_label)
-        self.feedback_label.style().polish(self.feedback_label)
+        self._reapply_styles(self.feedback_label)
 
     def update_summary(self, repo_path: Optional[str], metadata: Optional[Dict[str, str]]) -> None:
         """Update the card contents for the supplied repository information."""
@@ -149,9 +158,22 @@ class RepositorySummaryCard(QFrame):
                 self.feedback_label.setText("The selected path could not be found. Please verify the location or choose another repository.")
                 self.feedback_label.setProperty("highlight", False)
 
-        for widget in (self.status_badge, self.feedback_label):
-            widget.style().unpolish(widget)
-            widget.style().polish(widget)
+        self._reapply_styles(self.status_badge, self.feedback_label)
+
+    def _reapply_styles(self, *widgets: QWidget) -> None:
+        """Force Qt to refresh dynamic properties on the provided widgets."""
+
+        app = QApplication.instance()
+        fallback_style: Optional[QStyle] = app.style() if app is not None else None
+
+        for widget in widgets:
+            style: Optional[QStyle] = widget.style()
+            if style is None:
+                style = fallback_style
+            if style is None:
+                continue
+            style.unpolish(widget)
+            style.polish(widget)
             widget.update()
 
 
@@ -413,7 +435,7 @@ class RepositorySelectionWidget(QWidget):
             # Attempt to select the corresponding list item
             for index in range(self.repo_list_widget.list_widget.count()):
                 item = self.repo_list_widget.list_widget.item(index)
-                if item.data(Qt.ItemDataRole.UserRole) == path:
+                if item is not None and item.data(Qt.ItemDataRole.UserRole) == path:
                     self.repo_list_widget.list_widget.setCurrentItem(item)
                     break
         else:
