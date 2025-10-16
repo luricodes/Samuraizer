@@ -90,10 +90,6 @@ class MainWindow(BaseWindow):
 
             cache_path_value = cache_cfg.get("path") or str(Path.cwd() / ".cache")
             cache_dir = Path(str(cache_path_value)).expanduser()
-            cache_dir = initialize_cache_directory(cache_dir)
-            cache_db_path = cache_dir / CACHE_DB_FILE
-
-            logger.info(f"Initializing cache at: {cache_db_path}")
 
             # Get thread count from analysis settings
             thread_count = int(analysis_cfg.get("threads", 4) or 4)
@@ -101,14 +97,35 @@ class MainWindow(BaseWindow):
 
             set_cache_disabled(cache_disabled)
 
+            if cache_disabled:
+                cache_db_path = cache_dir / CACHE_DB_FILE
+                logger.debug(
+                    "Cache setup skipped because caching is disabled (DB path would be %s)",
+                    cache_db_path,
+                )
+            else:
+                cache_dir = initialize_cache_directory(cache_dir)
+                cache_db_path = cache_dir / CACHE_DB_FILE
+                logger.debug("Preparing cache at %s", cache_db_path)
+
             initialize_connection_pool(
                 str(cache_db_path.absolute()),
                 thread_count=thread_count,
                 force_disable_cache=cache_disabled
             )
             pool_initialized = True
-            logger.info(f"Connection pool initialized with cache at: {cache_db_path.absolute()}")
-            logger.info(f"Cache settings - Disabled: {cache_disabled}, Thread Count: {thread_count}")
+
+            if cache_disabled:
+                logger.info(
+                    "Caching is turned off. Analyses will run without storing results locally."
+                )
+            else:
+                logger.info("Caching is enabled. Repeat analyses will run faster.")
+                logger.debug(
+                    "Local cache ready at %s (worker threads: %s)",
+                    cache_db_path.absolute(),
+                    thread_count,
+                )
             
         except Exception as e:
             logger.error(f"Failed to initialize connection pool: {e}", exc_info=True)

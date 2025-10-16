@@ -42,7 +42,7 @@ class CacheStateManager:
             listeners = list(cls._listeners)
 
         state = "disabled" if disabled else "enabled"
-        logger.info("Cache state changed: %s", state)
+        logger.debug("Cache state changed: %s", state)
 
         for listener in listeners:
             try:
