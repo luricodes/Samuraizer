@@ -1,11 +1,12 @@
 from setuptools import setup, find_packages
 
-# Basic platform-independent requirements
+# All dependencies - matches requirements.txt exactly
 install_requires = [
-    # Core analyzer requirements
+    # Core requirements - Single source of truth for all dependencies
     "colorama>=0.4.6",
     "dicttoxml>=1.7.16",
-    "tqdm>=4.65.0",
+    "PyYAML>=6.0.1",
+    "tqdm>=4.66.6",
     "charset-normalizer>=3.2.0",
     "msgpack>=1.0.5",
     "typing-extensions>=4.7.1",
@@ -15,11 +16,32 @@ install_requires = [
     "jsonschema>=4.19.0",
     "tomli>=2.0.1",
     "xxhash>=3.5.0",
+
+    # Git and GitHub integration
+    "GitPython>=3.1.40",
+
+    # Platform-specific magic package
     "python-magic-bin>=0.4.14; platform_system == 'Windows'",
     "python-magic>=0.4.27; platform_system != 'Windows'",
-    
-    # GUI requirements
-    "PyQt6>=6.4.0",
+
+    # GUI requirements - Qt6 ecosystem
+    "PyQt6>=6.5.0",
+    "PyQt6-Qt6>=6.5.0",
+    "PyQt6-sip>=13.5.0",
+    "PyQt6-WebEngine>=6.5.0",
+    "qasync>=0.27.1",
+
+    # GUI visualization libraries (network graphs, etc.)
+    "pyvis>=0.3.2",
+    "networkx>=3.0",
+    "pydot>=1.4.2",
+    "graphviz>=0.20.1",
+
+    # GUI theming and auth
+    "PyQtDarkTheme>=0.1.7",
+    "requests>=2.31.0",
+    "keyring>=24.2.0",
+    "pydantic>=1.10.13",
 ]
 
 # Development dependencies
