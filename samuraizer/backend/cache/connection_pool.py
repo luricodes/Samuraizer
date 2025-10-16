@@ -96,7 +96,9 @@ class ConnectionPool:
             self._reset_worker_state()
 
             if self._cache_disabled:
-                logger.warning("Cache operations will be skipped. This may impact performance.")
+                logger.info(
+                    "Cache is disabled. The application will continue without writing to the cache."
+                )
                 self.pool = None
                 self._initialized = True
                 self._ensure_state_listener()

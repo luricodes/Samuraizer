@@ -9,11 +9,14 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 @dataclass
 class LogEntry:
     """Data class for storing log entries."""
+
     message: str
     level: int
     color: str
     timestamp: float
     formatted: str
+    level_name: str
+    logger_name: str
 
 class GuiLogHandler(QObject, logging.Handler):
     """
@@ -107,7 +110,9 @@ class GuiLogHandler(QObject, logging.Handler):
                 level=record.levelno,
                 color=self.LEVEL_COLORS.get(record.levelno, "#000000"),
                 timestamp=record.created,
-                formatted=msg
+                formatted=msg,
+                level_name=record.levelname,
+                logger_name=record.name,
             )
             
             # Add to buffer (deque handles size automatically)
@@ -130,8 +135,11 @@ class GuiLogHandler(QObject, logging.Handler):
         """Emit a single log entry."""
         try:
             self.log_record_received.emit({
-                'message': entry.formatted,
+                'message': entry.message,
+                'formatted': entry.formatted,
                 'level': entry.level,
+                'level_name': entry.level_name,
+                'logger_name': entry.logger_name,
                 'color': entry.color,
                 'timestamp': entry.timestamp,
                 'buffer_size': len(self._buffer)
@@ -144,8 +152,11 @@ class GuiLogHandler(QObject, logging.Handler):
         if self._current_batch:
             try:
                 batch_data: List[Dict[str, float | int | str]] = [{
-                    'message': entry.formatted,
+                    'message': entry.message,
+                    'formatted': entry.formatted,
                     'level': entry.level,
+                    'level_name': entry.level_name,
+                    'logger_name': entry.logger_name,
                     'color': entry.color,
                     'timestamp': entry.timestamp,
                     'buffer_size': len(self._buffer)

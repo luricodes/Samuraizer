@@ -92,8 +92,7 @@ class MainWindow(BaseWindow):
             cache_dir = Path(str(cache_path_value)).expanduser()
             cache_dir = initialize_cache_directory(cache_dir)
             cache_db_path = cache_dir / CACHE_DB_FILE
-
-            logger.info(f"Initializing cache at: {cache_db_path}")
+            logger.debug("Preparing cache at %s", cache_db_path)
 
             # Get thread count from analysis settings
             thread_count = int(analysis_cfg.get("threads", 4) or 4)
@@ -107,8 +106,18 @@ class MainWindow(BaseWindow):
                 force_disable_cache=cache_disabled
             )
             pool_initialized = True
-            logger.info(f"Connection pool initialized with cache at: {cache_db_path.absolute()}")
-            logger.info(f"Cache settings - Disabled: {cache_disabled}, Thread Count: {thread_count}")
+
+            if cache_disabled:
+                logger.info(
+                    "Caching is turned off. Analyses will run without storing results locally."
+                )
+            else:
+                logger.info("Caching is enabled. Repeat analyses will run faster.")
+                logger.debug(
+                    "Local cache ready at %s (worker threads: %s)",
+                    cache_db_path.absolute(),
+                    thread_count,
+                )
             
         except Exception as e:
             logger.error(f"Failed to initialize connection pool: {e}", exc_info=True)
