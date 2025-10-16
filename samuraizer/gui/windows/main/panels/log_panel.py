@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (
     QSpinBox, QMenu, QToolTip, QSizePolicy, QTreeWidget,
     QTreeWidgetItem, QHeaderView, QAbstractItemView
 )
-from PyQt6.QtCore import Qt, pyqtSlot, QSettings, QSize, QPoint
-from PyQt6.QtGui import QColor, QBrush, QGuiApplication
+from PyQt6.QtCore import Qt, pyqtSlot, QSettings, QSize, QPoint, QEvent
+from PyQt6.QtGui import QColor, QBrush, QGuiApplication, QPalette
 
 from .....utils.log_handler import GuiLogHandler
 
@@ -37,13 +37,16 @@ class LogPanel(QWidget):
 
         self._search_results: List[QTreeWidgetItem] = []
         self._search_index = -1
-        self._search_highlight = QBrush(QColor("#fff4ce"))
+        self._search_highlight = QBrush()
+        self._window_text_brush = QBrush()
+        self._message_text_brush = QBrush()
         self._highlighted_items: List[QTreeWidgetItem] = []
 
         # Set size policy to allow complete collapse
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
 
         self.initUI()
+        self._update_theme_colors()
         self.loadSettings()
 
     def sizeHint(self) -> QSize:
@@ -80,6 +83,15 @@ class LogPanel(QWidget):
 
         buffer_size = settings.value("log_panel/buffer_size", 1000, type=int)
         self.buffer_size.setValue(buffer_size)
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: D401 - Qt override
+        """React to palette changes so the panel follows the active theme."""
+        if event.type() == QEvent.Type.PaletteChange:
+            self._update_theme_colors()
+            self._apply_theme_to_existing_items()
+            if self.search_text:
+                self._refreshSearchResults()
+        super().changeEvent(event)
 
     # ------------------------------------------------------------------
     # UI setup
@@ -175,7 +187,7 @@ class LogPanel(QWidget):
         toolbar.addWidget(save_btn)
 
         self.log_view = QTreeWidget()
-        self.log_view.setHeaderLabels(["Time", "Level", "Source", "Message"])
+        self.log_view.setHeaderLabels(["Time", "Level", "Message"])
         self.log_view.setRootIsDecorated(False)
         self.log_view.setAlternatingRowColors(True)
         self.log_view.setUniformRowHeights(True)
@@ -191,10 +203,39 @@ class LogPanel(QWidget):
         header.setStretchLastSection(True)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
 
         layout.addWidget(self.log_view)
+
+    def _update_theme_colors(self) -> None:
+        palette = self.log_view.palette()
+        self._window_text_brush = palette.brush(QPalette.ColorRole.WindowText)
+        self._message_text_brush = palette.brush(QPalette.ColorRole.Text)
+
+        highlight_color = palette.color(QPalette.ColorRole.Highlight)
+        if highlight_color.alpha() == 255:
+            highlight_color.setAlpha(90)
+        self._search_highlight = QBrush(highlight_color)
+
+    def _ensure_theme_colors(self) -> None:
+        if (
+            self._message_text_brush.style() == Qt.BrushStyle.NoBrush
+            or self._window_text_brush.style() == Qt.BrushStyle.NoBrush
+        ):
+            self._update_theme_colors()
+
+    def _apply_theme_to_existing_items(self) -> None:
+        self._ensure_theme_colors()
+        for item in self._iter_items():
+            entry: Dict = item.data(0, Qt.ItemDataRole.UserRole) or {}
+            level_color = QColor(entry.get('color', "#4CAF50"))
+            item.setForeground(0, self._window_text_brush)
+            item.setForeground(1, QBrush(level_color))
+            item.setForeground(2, self._message_text_brush)
+            for column in range(3):
+                item.setBackground(column, QBrush())
+            item.setData(2, Qt.ItemDataRole.UserRole + 1, None)
+        self._highlighted_items.clear()
 
     # ------------------------------------------------------------------
     # Context menu
@@ -255,6 +296,8 @@ class LogPanel(QWidget):
             self.log_view.setUpdatesEnabled(True)
             self.auto_scroll = previous_auto_scroll
 
+        self._apply_theme_to_existing_items()
+
         if previous_auto_scroll and self.log_view.topLevelItemCount():
             last_item = self.log_view.topLevelItem(self.log_view.topLevelItemCount() - 1)
             self._scroll_to_item(last_item, align_bottom=True)
@@ -277,7 +320,7 @@ class LogPanel(QWidget):
     def _should_display(self, level: int) -> bool:
         if self.current_filter is None:
             return True
-        return level <= self.current_filter
+        return level >= self.current_filter
 
     def removeOldestEntry(self) -> None:
         """Remove the oldest entry from the table."""
@@ -342,30 +385,23 @@ class LogPanel(QWidget):
 
     def _appendMessage(self, log_data: Dict, *, scroll: bool = True) -> None:
         """Create and append a tree item for a log entry."""
+        self._ensure_theme_colors()
         timestamp = datetime.fromtimestamp(log_data['timestamp'])
         time_text = timestamp.strftime("%H:%M:%S")
         level_name = log_data.get('level_name') or logging.getLevelName(log_data['level'])
-        source = log_data.get('logger_name', '')
         message = log_data.get('message') or log_data.get('formatted') or ""
 
-        item = QTreeWidgetItem([time_text, level_name, source, message])
+        item = QTreeWidgetItem([time_text, level_name, message])
         item.setData(0, Qt.ItemDataRole.UserRole, log_data)
-        item.setToolTip(3, log_data.get('formatted', message))
+        item.setToolTip(2, log_data.get('formatted', message))
 
         level_color = QColor(log_data['color'])
-        message_color = QColor("#212121")
-
-        item.setForeground(1, level_color)
-        item.setForeground(3, message_color)
+        item.setForeground(0, self._window_text_brush)
+        item.setForeground(1, QBrush(level_color))
+        item.setForeground(2, self._message_text_brush)
         item.setTextAlignment(0, Qt.AlignmentFlag.AlignCenter)
         item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
         item.setTextAlignment(2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-
-        level_background = QBrush(level_color.lighter(190))
-        source_background = QBrush(level_color.lighter(210))
-        item.setBackground(0, level_background)
-        item.setBackground(1, level_background)
-        item.setBackground(2, source_background)
 
         self.log_view.addTopLevelItem(item)
 
@@ -411,7 +447,7 @@ class LogPanel(QWidget):
         matches: List[QTreeWidgetItem] = []
         for item in self._iter_items():
             entry: Dict = item.data(0, Qt.ItemDataRole.UserRole)
-            formatted = entry.get('formatted', item.text(3))
+            formatted = entry.get('formatted', item.text(2))
             if term in formatted.lower():
                 matches.append(item)
                 self._highlight_item(item)
@@ -429,19 +465,19 @@ class LogPanel(QWidget):
             yield self.log_view.topLevelItem(index)
 
     def _highlight_item(self, item: QTreeWidgetItem) -> None:
-        original_brush = item.background(3)
-        item.setData(3, Qt.ItemDataRole.UserRole + 1, original_brush)
-        item.setBackground(3, self._search_highlight)
+        original_brush = item.background(2)
+        item.setData(2, Qt.ItemDataRole.UserRole + 1, original_brush)
+        item.setBackground(2, self._search_highlight)
         self._highlighted_items.append(item)
 
     def _clearSearchHighlights(self) -> None:
         for item in self._highlighted_items:
-            original = item.data(3, Qt.ItemDataRole.UserRole + 1)
+            original = item.data(2, Qt.ItemDataRole.UserRole + 1)
             if isinstance(original, QBrush):
-                item.setBackground(3, original)
+                item.setBackground(2, original)
             else:
-                item.setBackground(3, QBrush())
-            item.setData(3, Qt.ItemDataRole.UserRole + 1, None)
+                item.setBackground(2, QBrush())
+            item.setData(2, Qt.ItemDataRole.UserRole + 1, None)
         self._highlighted_items.clear()
 
     def _focusSearchResult(self, index: int) -> None:
@@ -520,7 +556,7 @@ class LogPanel(QWidget):
         lines: List[str] = []
         for item in selected:
             entry: Dict = item.data(0, Qt.ItemDataRole.UserRole)
-            lines.append(entry.get('formatted', item.text(3)))
+            lines.append(entry.get('formatted', item.text(2)))
 
         clipboard = QGuiApplication.clipboard()
         clipboard.setText("\n".join(lines))
@@ -539,7 +575,7 @@ class LogPanel(QWidget):
                 with open(file_path, 'w', encoding='utf-8') as file:
                     for item in self._iter_items():
                         entry: Dict = item.data(0, Qt.ItemDataRole.UserRole)
-                        file.write(entry.get('formatted', item.text(3)))
+                        file.write(entry.get('formatted', item.text(2)))
                         file.write('\n')
             except Exception as exc:
                 logging.error("Failed to save logs: %s", exc)

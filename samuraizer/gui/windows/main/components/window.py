@@ -90,15 +90,23 @@ class MainWindow(BaseWindow):
 
             cache_path_value = cache_cfg.get("path") or str(Path.cwd() / ".cache")
             cache_dir = Path(str(cache_path_value)).expanduser()
-            cache_dir = initialize_cache_directory(cache_dir)
-            cache_db_path = cache_dir / CACHE_DB_FILE
-            logger.debug("Preparing cache at %s", cache_db_path)
 
             # Get thread count from analysis settings
             thread_count = int(analysis_cfg.get("threads", 4) or 4)
             cache_disabled = not bool(analysis_cfg.get("cache_enabled", True))
 
             set_cache_disabled(cache_disabled)
+
+            if cache_disabled:
+                cache_db_path = cache_dir / CACHE_DB_FILE
+                logger.debug(
+                    "Cache setup skipped because caching is disabled (DB path would be %s)",
+                    cache_db_path,
+                )
+            else:
+                cache_dir = initialize_cache_directory(cache_dir)
+                cache_db_path = cache_dir / CACHE_DB_FILE
+                logger.debug("Preparing cache at %s", cache_db_path)
 
             initialize_connection_pool(
                 str(cache_db_path.absolute()),

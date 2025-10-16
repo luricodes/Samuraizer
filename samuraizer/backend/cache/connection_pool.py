@@ -96,8 +96,8 @@ class ConnectionPool:
             self._reset_worker_state()
 
             if self._cache_disabled:
-                logger.info(
-                    "Cache is disabled. The application will continue without writing to the cache."
+                logger.debug(
+                    "Skipping cache connection pool initialization because caching is disabled."
                 )
                 self.pool = None
                 self._initialized = True
