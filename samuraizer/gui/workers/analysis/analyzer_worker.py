@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import os
 import threading
 import time
+from contextlib import suppress
 from typing import Dict, Any, Optional, Generator, List
 from pathlib import Path
 import fnmatch
@@ -451,51 +453,119 @@ class AnalyzerWorker(QObject):
         output_format = self._map_format_name(output_config.get('format', 'json'))
         include_summary = output_config.get('include_summary', True)
 
-        stream_entries: List[Dict[str, Any]] = [] if output_path else []
+        stream_entries: List[Dict[str, Any]] = []
+        output_queue: Optional[asyncio.Queue] = None
+        output_writer_task: Optional[asyncio.Task] = None
+        output_sentinel: object = object()
+        summary_enqueued = False
 
-        async for entry in stream:
-            if self._stop_requested:
-                break
+        loop = asyncio.get_running_loop()
 
-            if "summary" in entry:
-                summary.update(entry["summary"])
-                summary_received = True
-                if output_path and include_summary:
-                    stream_entries.append(entry)
-                continue
+        streaming_capable_formats = {"json", "jsonl", "msgpack"}
+        use_streaming_writer = bool(
+            output_path
+            and output_format in streaming_capable_formats
+        )
 
-            parent = entry.get("parent", "")
-            filename = entry.get("filename", "")
-            info = entry.get("info", {})
+        if output_path:
+            self._emit_status(f"Preparing {output_format} output writer...")
 
-            if info.get("type") == "error":
-                failed_files.append({
-                    "file": str(Path(parent) / filename),
-                    "error": info.get("content", "Unknown error"),
-                })
-            else:
-                included_files += 1
-                estimated_total = max(self.total_files, included_files)
-                self._update_progress(included_files, estimated_total)
+        if use_streaming_writer:
+            buffer_size = 256
+            env_override = os.getenv("SAMURAIZER_ASYNC_STREAM_CHUNK")
+            if env_override:
+                try:
+                    parsed = int(env_override)
+                except ValueError:
+                    parsed = None
+                else:
+                    if parsed and parsed > 0:
+                        buffer_size = parsed
 
-                now = time.monotonic()
-                if now - last_status_update >= 0.5:
-                    display_name = filename or (
-                        parent if parent else (root_dir.name if isinstance(root_dir, Path) else "")
+            output_queue = asyncio.Queue(maxsize=buffer_size)
+
+            def queue_iterator() -> Generator[Dict[str, Any], None, None]:
+                while True:
+                    future = asyncio.run_coroutine_threadsafe(
+                        output_queue.get(),
+                        loop,
                     )
-                    self._emit_status(
-                        f"Processed {included_files} files (latest: {display_name})"
-                    )
-                    last_status_update = now
+                    item = future.result()
+                    if item is output_sentinel:
+                        break
+                    yield item
 
-            current = structure
-            if parent:
-                for part in Path(parent).parts:
-                    current = current.setdefault(part, {})
-            current[filename] = info
+            output_writer_task = asyncio.create_task(
+                asyncio.to_thread(
+                    self._write_output_sync,
+                    queue_iterator(),
+                    output_config,
+                )
+            )
+            self._emit_status(f"Writing output in {output_format} format...")
 
-            if output_path:
-                stream_entries.append(entry)
+        async def enqueue_output(item: Dict[str, Any]) -> None:
+            if output_queue is not None:
+                await output_queue.put(item)
+            elif output_path:
+                stream_entries.append(item)
+
+        stream_exception: Optional[BaseException] = None
+
+        try:
+            async for entry in stream:
+                if self._stop_requested:
+                    break
+
+                if "summary" in entry:
+                    summary.update(entry["summary"])
+                    summary_received = True
+                    if output_path and include_summary:
+                        await enqueue_output(entry)
+                        summary_enqueued = True
+                    continue
+
+                parent = entry.get("parent", "")
+                filename = entry.get("filename", "")
+                info = entry.get("info", {})
+
+                if info.get("type") == "error":
+                    failed_files.append({
+                        "file": str(Path(parent) / filename),
+                        "error": info.get("content", "Unknown error"),
+                    })
+                else:
+                    included_files += 1
+                    estimated_total = max(self.total_files, included_files)
+                    self._update_progress(included_files, estimated_total)
+
+                    now = time.monotonic()
+                    if now - last_status_update >= 0.5:
+                        display_name = filename or (
+                            parent if parent else (root_dir.name if isinstance(root_dir, Path) else "")
+                        )
+                        self._emit_status(
+                            f"Processed {included_files} files (latest: {display_name})"
+                        )
+                        last_status_update = now
+
+                current = structure
+                if parent:
+                    for part in Path(parent).parts:
+                        current = current.setdefault(part, {})
+                current[filename] = info
+
+                if output_path:
+                    await enqueue_output(entry)
+        except Exception as exc:
+            stream_exception = exc
+            raise
+        finally:
+            if stream_exception is not None and output_queue is not None:
+                with suppress(Exception):
+                    await output_queue.put(output_sentinel)
+                    if output_writer_task is not None:
+                        await output_writer_task
 
         if not summary_received:
             summary.update({
@@ -520,22 +590,40 @@ class AnalyzerWorker(QObject):
         }
 
         if output_path:
-            if include_summary and not summary_received:
-                stream_entries.append({"summary": summary})
+            if include_summary and not summary_enqueued:
+                summary_entry = {"summary": summary}
+                await enqueue_output(summary_entry)
 
-            entries_for_output = (
-                stream_entries
-                if include_summary
-                else [entry for entry in stream_entries if "summary" not in entry]
-            )
+            if output_queue is not None:
+                await output_queue.put(output_sentinel)
+                if output_writer_task is not None:
+                    try:
+                        await output_writer_task
+                    except Exception:
+                        self._emit_status(
+                            f"Failed to write results to {output_path}"
+                        )
+                        raise
+                    else:
+                        self._emit_status(f"Results written to {output_path}")
+            else:
+                entries_for_output = (
+                    stream_entries
+                    if include_summary
+                    else [entry for entry in stream_entries if "summary" not in entry]
+                )
 
-            def entry_iterator() -> Generator[Dict[str, Any], None, None]:
-                for item in entries_for_output:
-                    yield item
+                def entry_iterator() -> Generator[Dict[str, Any], None, None]:
+                    for item in entries_for_output:
+                        yield item
 
-            self._emit_status(f"Writing output in {output_format} format...")
-            await asyncio.to_thread(self._write_output_sync, entry_iterator(), output_config)
-            self._emit_status(f"Results written to {output_path}")
+                self._emit_status(f"Writing output in {output_format} format...")
+                await asyncio.to_thread(
+                    self._write_output_sync,
+                    entry_iterator(),
+                    output_config,
+                )
+                self._emit_status(f"Results written to {output_path}")
 
         return results
 
