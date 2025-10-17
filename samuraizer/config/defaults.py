@@ -16,7 +16,6 @@ threads = 4
 follow_symlinks = false
 include_binary = false
 encoding = "auto"
-hash_algorithm = "xxhash"
 cache_enabled = true
 include_summary = true
 
@@ -80,7 +79,6 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 "follow_symlinks": {"type": "boolean"},
                 "include_binary": {"type": "boolean"},
                 "encoding": {"type": "string"},
-                "hash_algorithm": {"type": "string"},
                 "cache_enabled": {"type": "boolean"},
                 "include_summary": {"type": "boolean"},
             },
@@ -91,7 +89,6 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 "follow_symlinks",
                 "include_binary",
                 "encoding",
-                "hash_algorithm",
                 "cache_enabled",
                 "include_summary",
             ],

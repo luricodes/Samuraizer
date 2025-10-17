@@ -11,7 +11,6 @@ _PROFILE_SECTION_KEY_MAP: Dict[str, Set[str]] = {
         "follow_symlinks",
         "include_binary",
         "encoding",
-        "hash_algorithm",
         "cache_enabled",
         "include_summary",
     },

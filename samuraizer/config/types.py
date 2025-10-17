@@ -25,7 +25,6 @@ class AnalysisConfig(TypedDict, total=False):
     follow_symlinks: bool
     include_binary: bool
     encoding: str
-    hash_algorithm: str
     cache_enabled: bool
     include_summary: bool
 

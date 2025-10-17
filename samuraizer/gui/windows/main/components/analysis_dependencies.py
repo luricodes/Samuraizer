@@ -22,7 +22,6 @@ class RepositoryConfig:
     include_binary: bool = False
     follow_symlinks: bool = False
     encoding: Optional[str] = None
-    hash_algorithm: str = "xxhash"
     thread_count: int = 4
     image_extensions: Sequence[str] = field(default_factory=tuple)
     cache_path: str = ".cache"
@@ -66,7 +65,6 @@ class AnalysisConfig:
             "include_binary": self.repository.include_binary,
             "follow_symlinks": self.repository.follow_symlinks,
             "encoding": self.repository.encoding,
-            "hash_algorithm": self.repository.hash_algorithm,
             "thread_count": self.repository.thread_count,
             "image_extensions": list(self.repository.image_extensions),
             "cache_path": self.repository.cache_path,
@@ -264,7 +262,6 @@ class UIAnalysisConfigCollector(AnalysisConfigCollector):
             include_binary=repository_config.get("include_binary", False),
             follow_symlinks=repository_config.get("follow_symlinks", False),
             encoding=repository_config.get("encoding"),
-            hash_algorithm=repository_config.get("hash_algorithm", "xxhash"),
             thread_count=repository_config.get("thread_count", 4),
             image_extensions=tuple(
                 repository_config.get("image_extensions", self._DEFAULT_IMAGE_EXTENSIONS)
@@ -294,7 +291,6 @@ class UIAnalysisConfigCollector(AnalysisConfigCollector):
         config_manager.set_value("analysis.follow_symlinks", repo_cfg.follow_symlinks)
         config_manager.set_value("analysis.encoding", repo_cfg.encoding or "auto")
         config_manager.set_value("analysis.threads", repo_cfg.thread_count)
-        config_manager.set_value("analysis.hash_algorithm", repo_cfg.hash_algorithm)
         if repo_cfg.cache_path:
             config_manager.set_value("cache.path", repo_cfg.cache_path)
         if output_cfg.format:

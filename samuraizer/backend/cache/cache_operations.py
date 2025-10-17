@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 from sqlite3 import Connection
 
 from .connection_pool import is_cache_disabled, queue_write
@@ -25,20 +25,22 @@ def get_cached_entry(conn: Connection, file_path: str) -> Optional[Dict[str, Any
 
     try:
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT file_hash, hash_algorithm, file_info, size, mtime
+        cursor.execute(
+            """
+            SELECT file_hash, file_info, size, mtime
             FROM cache WHERE file_path = ?
-        """, (file_path,))
-        
+            """,
+            (file_path,),
+        )
+
         result = cursor.fetchone()
         if result:
-            file_hash, hash_algorithm, file_info_json, size, mtime = result
+            file_hash, file_info_json, size, mtime = result
             try:
                 file_info = json.loads(file_info_json)
                 logger.debug(f"Cache hit for file: {file_path}")
                 return {
                     "file_hash": file_hash,
-                    "hash_algorithm": hash_algorithm,
                     "file_info": file_info,
                     "size": size,
                     "mtime": mtime
@@ -60,7 +62,6 @@ def set_cached_entry(
     file_info: Dict[str, Any],
     size: int,
     mtime: float,
-    hash_algorithm: Optional[str] = "xxhash",
     synchronous: bool = False,
 ) -> None:
     """
@@ -73,7 +74,6 @@ def set_cached_entry(
         file_info (Dict[str, Any]): File information
         size (int): File size
         mtime (float): File modification time
-        hash_algorithm (Optional[str]): Hash algorithm used (default: xxhash)
         synchronous (bool): Whether to block until the entry is persisted
     """
     try:
@@ -81,7 +81,7 @@ def set_cached_entry(
         file_info_json = json.dumps(file_info)
 
         # Create entry tuple for batch processing
-        entry = (file_path, file_hash, hash_algorithm, file_info_json, size, mtime)
+        entry = (file_path, file_hash, file_info_json, size, mtime)
 
         if is_cache_disabled():
             logger.debug("Skipping cache persist for %s (cache disabled)", file_path)

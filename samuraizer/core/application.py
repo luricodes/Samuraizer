@@ -204,12 +204,10 @@ def run() -> None:
         include_summary = True
 
     cache_enabled = bool(analysis_defaults.get("cache_enabled", True))
-    if args.no_cache:
+    if args.no_cache or args.no_hash:
         cache_enabled = False
 
-    hash_algorithm = args.hash_algorithm or analysis_defaults.get("hash_algorithm", "xxhash")
-    if args.no_hash or not cache_enabled:
-        hash_algorithm = None
+    hashing_enabled = cache_enabled
 
     max_size_mb = args.max_size or analysis_defaults.get("max_file_size_mb", 50)
     max_file_size = max_size_mb * 1024 * 1024
@@ -255,6 +253,7 @@ def run() -> None:
     logging.info("Output file: %s (%s)", output_file, output_format)
     logging.info("Include summary: %s", include_summary)
     logging.info("Cache enabled: %s", cache_enabled)
+    logging.info("Hashing algorithm: %s", "xxhash" if hashing_enabled else "disabled")
     logging.info("Cache path: %s", cache_path)
     logging.info("Max file size (MB): %s", max_size_mb)
     logging.info("Using UTC timestamps: %s", use_utc)
@@ -286,7 +285,7 @@ def run() -> None:
                     exclude_patterns=exclude_patterns,
                     threads=threads,
                     encoding=encoding,
-                    hash_algorithm=hash_algorithm,
+                    hashing_enabled=hashing_enabled,
                     cancellation_token=cancellation_source.token,
                 )
                 output_function = OutputFactory.get_output(
@@ -309,7 +308,7 @@ def run() -> None:
                     exclude_patterns=exclude_patterns,
                     threads=threads,
                     encoding=encoding,
-                    hash_algorithm=hash_algorithm,
+                    hashing_enabled=hashing_enabled,
                     cancellation_token=cancellation_source.token,
                     chunk_callback=store.add_entries,
                     materialize=False,

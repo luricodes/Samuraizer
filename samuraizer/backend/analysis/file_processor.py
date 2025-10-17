@@ -29,14 +29,18 @@ def process_file(
     include_binary: bool,
     image_extensions: Set[str],
     encoding: Optional[str] = None,
-    hash_algorithm: Optional[str] = None,  # Added hash_algorithm parameter
+    hashing_enabled: bool = True,
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     filename = file_path.name
-    logger.debug(f"Processing file: {file_path} (hash_algorithm: {hash_algorithm})")
+    logger.debug(
+        "Processing file: %s (hashing_enabled=%s)",
+        file_path,
+        hashing_enabled,
+    )
 
-    if hash_algorithm is not None and is_cache_disabled():
-        logger.debug("Cache disabled at runtime; ignoring supplied hash algorithm")
-        hash_algorithm = None
+    cache_active = hashing_enabled and not is_cache_disabled()
+    if hashing_enabled and not cache_active:
+        logger.debug("Cache disabled at runtime; skipping hashing")
 
     try:
         stat = file_path.stat()
@@ -59,10 +63,10 @@ def process_file(
             "size": current_size
         }
 
-    # Only check cache if caching is enabled (hash_algorithm is not None)
+    # Only check cache if caching is enabled
     cached_entry = None
     file_hash = None
-    if hash_algorithm is not None:
+    if cache_active:
         logger.debug(f"Cache enabled, checking cache for file: {file_path}")
         # Check cache using xxHash
         with get_connection_context() as conn:
@@ -71,19 +75,22 @@ def process_file(
                 cached_entry = get_cached_entry(conn, str(file_path.resolve()))
                 logger.debug(f"Cache lookup result for {file_path}: {'hit' if cached_entry else 'miss'}")
             else:
-                logger.warning("Connection is None despite hash_algorithm being set")
+                logger.warning("Connection is None despite hashing being enabled")
 
         if cached_entry:
             cached_size = cached_entry.get("size")
             cached_mtime = cached_entry.get("mtime")
-            cached_hash_algorithm = cached_entry.get("hash_algorithm")
 
-            logger.debug(f"Comparing cache: size={cached_size}=={current_size}, mtime={cached_mtime}=={current_mtime}, algo={cached_hash_algorithm}=={hash_algorithm}")
+            logger.debug(
+                "Comparing cache: size=%s==%s, mtime=%s==%s",
+                cached_size,
+                current_size,
+                cached_mtime,
+                current_mtime,
+            )
 
-            # Only use cache if size, mtime, and hash algorithm match
-            if (cached_size == current_size and 
-                cached_mtime == current_mtime and 
-                cached_hash_algorithm == hash_algorithm):
+            # Only use cache if size and mtime match
+            if cached_size == current_size and cached_mtime == current_mtime:
                 logger.debug(f"Cache hit for file: {file_path}")
                 return filename, cached_entry.get("file_info")
 
@@ -101,12 +108,15 @@ def process_file(
     _add_metadata(file_info, stat)
 
     # Update cache only if caching is enabled and we have a valid hash
-    if hash_algorithm is not None and file_hash:
+    if cache_active and file_hash:
         logger.debug(f"Attempting to update cache for file: {file_path}")
         with get_connection_context() as conn:
             if conn is not None:  # Only proceed if connection is available (cache enabled)
                 try:
-                    logger.debug(f"Got valid connection, writing to cache. Hash: {file_hash}, Algorithm: {hash_algorithm}")
+                    logger.debug(
+                        "Got valid connection, writing to cache. Hash: %s",
+                        file_hash,
+                    )
                     set_cached_entry(
                         conn,
                         str(file_path.resolve()),
@@ -114,7 +124,6 @@ def process_file(
                         file_info,
                         current_size,
                         current_mtime,
-                        hash_algorithm  # Pass the hash_algorithm to set_cached_entry
                     )
                     logger.debug(f"Cache updated successfully for: {file_path}")
                 except Exception as e:

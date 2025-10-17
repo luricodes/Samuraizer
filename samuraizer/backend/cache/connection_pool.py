@@ -265,11 +265,14 @@ class ConnectionPool:
         """Process a batch of write operations"""
         cursor = conn.cursor()
         try:
-            cursor.executemany("""
+            cursor.executemany(
+                """
                 INSERT OR REPLACE INTO cache
-                (file_path, file_hash, hash_algorithm, file_info, size, mtime)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, batch)
+                (file_path, file_hash, file_info, size, mtime)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                batch,
+            )
             conn.commit()
             logger.debug(f"Successfully processed batch of {len(batch)} cache entries")
         except sqlite3.Error as e:
@@ -474,18 +477,10 @@ class ConnectionPool:
                         CREATE TABLE IF NOT EXISTS cache (
                             file_path TEXT PRIMARY KEY,
                             file_hash TEXT,
-                            hash_algorithm TEXT,
                             file_info TEXT,
                             size INTEGER,
                             mtime REAL
                         )
-                        """
-                    )
-
-                    conn.execute(
-                        """
-                        CREATE INDEX IF NOT EXISTS idx_hash_algorithm
-                        ON cache(hash_algorithm);
                         """
                     )
 

@@ -31,7 +31,7 @@ def get_directory_structure(
     exclude_patterns: List[str],
     threads: int,
     encoding: str = 'utf-8',
-    hash_algorithm: Optional[str] = "xxhash",
+    hashing_enabled: bool = True,
     progress_callback: Optional[Callable[[int], None]] = None,
     cancellation_token: Optional[CancellationToken] = None,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
@@ -53,7 +53,7 @@ def get_directory_structure(
         exclude_patterns=exclude_patterns,
         threads=threads,
         encoding=encoding or 'utf-8',
-        hash_algorithm=hash_algorithm,
+        hashing_enabled=hashing_enabled,
         progress_callback=progress_callback,
         cancellation_token=cancellation_token,
         chunk_size=chunk_size,
@@ -89,7 +89,7 @@ def generate_directory_chunks(
     exclude_patterns: List[str],
     threads: int,
     encoding: str,
-    hash_algorithm: Optional[str],
+    hashing_enabled: bool,
     progress_callback: Optional[Callable[[int], None]],
     cancellation_token: Optional[CancellationToken],
     chunk_size: int,
@@ -154,7 +154,7 @@ def generate_directory_chunks(
                 include_binary,
                 image_extensions,
                 encoding=encoding,
-                hash_algorithm=hash_algorithm,
+                hashing_enabled=hashing_enabled,
             )
             pending[future] = file_path
 
@@ -250,8 +250,8 @@ def generate_directory_chunks(
         "processed_files": processed_count,
     }
 
-    if hash_algorithm is not None:
-        summary["hash_algorithm"] = hash_algorithm
+    if hashing_enabled:
+        summary["hash_algorithm"] = "xxhash"
 
     logging.info("Analysis Summary:")
     logging.info("  Processed files: %d", included_files)
@@ -260,8 +260,10 @@ def generate_directory_chunks(
         logging.info("  Failed files: %d", len(failed_files))
     if cancellation_token and cancellation_token.is_cancellation_requested():
         logging.info("  Analysis was stopped before completion")
-    if hash_algorithm is not None:
-        logging.info("  Hash algorithm used: %s", hash_algorithm)
+    logging.info(
+        "  Hash algorithm used: %s",
+        "xxhash" if hashing_enabled else "disabled",
+    )
 
     yield {"summary": summary}
 

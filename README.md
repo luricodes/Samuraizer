@@ -153,7 +153,6 @@ samuraizer /path/to/analyze -o output.json \
   --threads 8 \
   --max-size 100 \
   --follow-symlinks \
-  --hash-algorithm xxhash \
   --encoding utf-8
 ```
 
@@ -182,7 +181,6 @@ CLI Options (highlights)
 - --threads: Number of processing threads
 - --max-size: Maximum file size (MB)
 - --encoding: Text encoding
-- --hash-algorithm: Hash algorithm (default xxhash)
 - --cache-path: Cache directory location
 - --no-cache: Disable caching
 - --verbose, --log-file: Logging controls

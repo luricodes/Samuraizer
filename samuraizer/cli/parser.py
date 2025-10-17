@@ -9,7 +9,6 @@ setup_logging(verbose=False)
 logger = logging.getLogger(__name__)
 
 
-HASH_ALGORITHMS = ["md5", "sha1", "sha256", "sha512", "xxhash"]
 SUPPORTED_FORMATS = ["json", "yaml", "xml", "jsonl", "dot", "csv", "sexp", "msgpack"]
 
 
@@ -87,13 +86,6 @@ def parse_arguments(argv: Optional[list[str]] = None):
         action="store_true",
         default=None,
         help="Enables streaming mode for supported formats.",
-    )
-    parser.add_argument(
-        "--hash-algorithm",
-        type=str,
-        choices=HASH_ALGORITHMS,
-        default=None,
-        help="Hash algorithm for verification (default from configuration).",
     )
     parser.add_argument(
         "--no-cache",

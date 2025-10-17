@@ -211,8 +211,11 @@ class AnalyzerWorker(QObject):
             cache_disabled = is_cache_disabled()
             logger.debug(f"Cache disabled setting: {cache_disabled}")
 
-            hash_algorithm = None if cache_disabled else repo_config.get('hash_algorithm', 'xxhash')
-            logger.debug(f"Using hash algorithm: {hash_algorithm}")
+            hashing_enabled = not cache_disabled
+            logger.debug(
+                "Hashing algorithm: %s",
+                "xxhash" if hashing_enabled else "disabled",
+            )
 
             analysis_params: Dict[str, Any] = {
                 'root_dir': root_dir,
@@ -225,7 +228,7 @@ class AnalyzerWorker(QObject):
                 'exclude_patterns': filters_config.get('exclude_patterns', []),
                 'threads': repo_config.get('thread_count', 4),
                 'encoding': repo_config.get('encoding'),
-                'hash_algorithm': hash_algorithm,
+                'hashing_enabled': hashing_enabled,
                 'cancellation_token': self._cancellation.token,
             }
 

@@ -1,13 +1,13 @@
 # samuraizer/core/summary.py
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 
 def create_summary(
     structure: Dict[str, Any],
     summary: Dict[str, Any],
     include_summary: bool,
-    hash_algorithm: Optional[str] = None
+    hashing_enabled: bool = False,
 ) -> Dict[str, Any]:
     """
     Creates a summary of the directory structure.
@@ -16,7 +16,7 @@ def create_summary(
         structure (Dict[str, Any]): The directory structure.
         summary (Dict[str, Any]): The existing summary.
         include_summary (bool): Flag indicating whether to include the summary.
-        hash_algorithm (Optional[str], optional): The hash algorithm used or None.
+        hashing_enabled (bool, optional): Whether hashing/caching was enabled.
 
     Returns:
         Dict[str, Any]: The final data structure for output.
@@ -25,8 +25,8 @@ def create_summary(
 
     if include_summary and summary:
         output_data["summary"] = summary
-        if hash_algorithm:
-            output_data["hash_algorithm"] = hash_algorithm
+        if hashing_enabled:
+            output_data["hash_algorithm"] = "xxhash"
 
     output_data["structure"] = structure
 
