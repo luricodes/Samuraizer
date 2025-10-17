@@ -1,11 +1,12 @@
 """Analysis management with dependency injected collaborators."""
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any, Coroutine, Dict, Optional
+from typing import Dict, Optional
+
+from PyQt6.QtCore import QThread
 
 from samuraizer.config.unified import UnifiedConfigManager
 from samuraizer.gui.workers.analysis.analyzer_worker import AnalyzerWorker
@@ -51,7 +52,7 @@ class AnalysisManager:
         self._message_presenter = message_presenter
 
         self.analyzer_worker: Optional[AnalyzerWorker] = None
-        self.analysis_task: Optional[asyncio.Task] = None
+        self.worker_thread: Optional[QThread] = None
         self.current_config: Optional[AnalysisConfig] = None
         self.results_data: Optional[Dict[str, object]] = None
 
@@ -75,12 +76,7 @@ class AnalysisManager:
             self._message_presenter.error("Error", f"Failed to open repository: {exc}")
 
     def start_analysis(self) -> None:
-        """Start the repository analysis."""
-
-        self._schedule_coroutine(self.start_analysis_async())
-
-    async def start_analysis_async(self) -> None:
-        """Asynchronous workflow for starting the analysis."""
+        """Start the repository analysis using a dedicated worker thread."""
 
         try:
             if not self._validate_analysis_prerequisites():
@@ -92,45 +88,25 @@ class AnalysisManager:
             self._analysis_display.set_configuration(config_payload)
             self._state_controller.set_analysis_state(AnalysisState.RUNNING)
 
-            await self._setup_analysis_worker(config_payload)
+            self._setup_analysis_worker(config_payload)
             assert self.analyzer_worker is not None
+            assert self.worker_thread is not None
 
             self._analysis_display.start_analysis(self.analyzer_worker)
-
-            task = asyncio.create_task(self.analyzer_worker.run())
-            self.analysis_task = task
-
-            try:
-                results = await task
-            except asyncio.CancelledError:
-                logger.debug("Analysis task cancelled")
-                self._state_controller.set_analysis_state(AnalysisState.IDLE)
-                self._status_reporter.show_message("Analysis cancelled.")
-                await self._cleanup_previous_analysis_async()
-            except Exception as exc:
-                logger.error("Analysis task raised an exception: %s", exc, exc_info=True)
-                await self._on_analysis_error_async(str(exc))
-            else:
-                if isinstance(results, dict):
-                    await self._on_analysis_finished_async(results)
-            finally:
-                if self.analysis_task is task:
-                    self.analysis_task = None
+            self.worker_thread.start()
+            self._status_reporter.show_message("Analysis started.")
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.error("Error starting analysis: %s", exc, exc_info=True)
-            await self._on_analysis_error_async(str(exc))
+            self._handle_worker_error(str(exc))
 
     def stop_analysis(self) -> None:
-        """Stop the current analysis."""
-
-        self._schedule_coroutine(self.stop_analysis_async())
-
-    async def stop_analysis_async(self) -> None:
-        """Asynchronously stop the current analysis."""
+        """Stop the current analysis and clean up the worker."""
 
         try:
+            if self.analyzer_worker:
+                self.analyzer_worker.stop()
             self._analysis_display.stop_analysis()
-            await self._cleanup_previous_analysis_async()
+            self._cleanup_previous_analysis()
             self._state_controller.set_analysis_state(AnalysisState.IDLE)
             self._status_reporter.show_message("Analysis stopped.")
         except Exception as exc:  # pragma: no cover - defensive guard
@@ -141,7 +117,7 @@ class AnalysisManager:
     def cleanup(self) -> None:
         """Cleanup resources when closing the application."""
 
-        self._schedule_coroutine(self._cleanup_previous_analysis_async())
+        self._cleanup_previous_analysis(wait=True)
 
     def _validate_analysis_prerequisites(self) -> bool:
         """Validate all prerequisites before starting analysis."""
@@ -214,82 +190,104 @@ class AnalysisManager:
             )
             return False
 
-    def _schedule_coroutine(self, coro: Coroutine[Any, Any, Any]) -> None:
-        """Dispatch a coroutine on the running event loop or execute synchronously."""
+    def _setup_analysis_worker(self, config_payload: Dict[str, object]) -> None:
+        """Set up the analysis worker and associated thread."""
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(coro)
-        else:
-            loop.create_task(coro)
+        self._cleanup_previous_analysis(wait=True)
 
-    async def _setup_analysis_worker(self, config_payload: Dict[str, object]) -> None:
-        """Set up the analysis worker, ensuring previous state is cleared."""
+        worker = AnalyzerWorker(config_payload)
+        thread = QThread()
+        thread.setObjectName("AnalyzerWorkerThread")
 
-        try:
-            await self._cleanup_previous_analysis_async()
-            self.analyzer_worker = AnalyzerWorker(config_payload)
-        except Exception as exc:
-            logger.error("Error setting up worker: %s", exc, exc_info=True)
-            raise
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        worker.error.connect(lambda _msg: thread.quit())
 
-    async def _on_analysis_finished_async(self, results: Dict[str, object]) -> None:
-        """Handle analysis completion."""
+        worker.finished.connect(self._handle_worker_finished)
+        worker.error.connect(self._handle_worker_error)
+        thread.finished.connect(self._handle_worker_thread_finished)
+
+        self.analyzer_worker = worker
+        self.worker_thread = thread
+
+    def _handle_worker_finished(self, results: Dict[str, object]) -> None:
+        """Handle analysis completion on the GUI thread."""
 
         self.results_data = results
-        self._state_controller.set_analysis_state(AnalysisState.COMPLETED)
-        await self._cleanup_previous_analysis_async()
+        summary = {}
+        if isinstance(results, dict):
+            summary = results.get("summary", {}) or {}
 
-    async def _on_analysis_error_async(self, error_message: str) -> None:
-        """Handle analysis error."""
+        stopped_early = bool(summary.get("stopped_early"))
+        if stopped_early:
+            self._state_controller.set_analysis_state(AnalysisState.IDLE)
+            self._status_reporter.show_message("Analysis stopped.")
+        else:
+            self._state_controller.set_analysis_state(AnalysisState.COMPLETED)
+            self._status_reporter.show_message("Analysis completed.")
+        self._cleanup_previous_analysis(wait=False)
 
+    def _handle_worker_error(self, error_message: str) -> None:
+        """Handle analysis errors emitted by the worker."""
+
+        self._analysis_display.stop_analysis()
         self._message_presenter.error(
             "Analysis Error",
-            f"An error occurred during analysis:\n\n{error_message}\n\nCheck the logs for more details.",
+            (
+                "An error occurred during analysis:\n\n"
+                f"{error_message}\n\nCheck the logs for more details."
+            ),
         )
         self._state_controller.set_analysis_state(AnalysisState.ERROR)
-        await self._cleanup_previous_analysis_async()
+        self._status_reporter.show_message("Analysis failed.")
+        self._cleanup_previous_analysis(wait=False)
 
-    async def _cancel_analysis_task_async(self) -> None:
-        """Cancel any running analysis task asynchronously."""
+    def _handle_worker_thread_finished(self) -> None:
+        """Ensure the worker thread is cleaned up once it stops."""
 
-        task = self.analysis_task
-        if task is None:
-            return
-
-        if not task.done():
-            task.cancel()
+        thread = self.worker_thread
+        if thread is not None:
             try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:  # pragma: no cover - defensive guard
-                logger.debug("Analysis task raised during cancellation: %s", exc, exc_info=True)
+                thread.deleteLater()
+            except Exception:  # pragma: no cover - defensive guard
+                logger.debug("Failed to delete worker thread", exc_info=True)
+        self.worker_thread = None
+        self.analyzer_worker = None
 
-        if self.analysis_task is task:
-            self.analysis_task = None
+    def _cleanup_previous_analysis(self, wait: bool = False) -> None:
+        """Clean up previous analysis resources synchronously."""
 
-    async def _cleanup_previous_analysis_async(self) -> None:
-        """Clean up previous analysis resources asynchronously."""
+        thread = self.worker_thread
+        worker = self.analyzer_worker
 
-        try:
-            await self._cancel_analysis_task_async()
+        if worker is not None:
+            try:
+                worker.stop()
+            except Exception:  # pragma: no cover - defensive guard
+                logger.debug("Failed to stop analyzer worker", exc_info=True)
 
-            if self.analyzer_worker:
-                try:
-                    self.analyzer_worker.stop()
-                except Exception:
-                    logger.debug("Failed to stop analyzer worker during cleanup", exc_info=True)
+        if thread is not None:
+            if thread.isRunning():
+                thread.quit()
+                if wait:
+                    thread.wait(5000)
 
-                try:
-                    self.analyzer_worker.deleteLater()
-                except Exception:
-                    logger.debug("Analyzer worker already deleted", exc_info=True)
+        if worker is not None:
+            try:
+                worker.deleteLater()
+            except Exception:  # pragma: no cover - defensive guard
+                logger.debug("Analyzer worker already deleted", exc_info=True)
 
+        if thread is not None and wait:
+            try:
+                thread.deleteLater()
+            except Exception:  # pragma: no cover - defensive guard
+                logger.debug("Worker thread already deleted", exc_info=True)
+
+        if wait:
+            self.worker_thread = None
             self.analyzer_worker = None
-        except Exception as exc:  # pragma: no cover - defensive guard
-            logger.error("Error cleaning up analysis: %s", exc, exc_info=True)
 
     def _update_configuration(self) -> None:
         """Update the current configuration from the configured collector."""

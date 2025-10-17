@@ -7,7 +7,7 @@ from contextlib import suppress
 from typing import Dict, Any, Optional, Generator, List
 from pathlib import Path
 import fnmatch
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 from samuraizer.backend.services.event_service.cancellation import CancellationTokenSource
 from samuraizer.backend.analysis.traversal.async_traversal import (
     get_directory_structure_async,
@@ -185,7 +185,7 @@ class AnalyzerWorker(QObject):
     def _emit_error(self, message: str) -> None:
         self.error.emit(message)
 
-    async def run(self):
+    async def run_async(self):
         """Main worker execution method executed via asyncio."""
         results: Optional[Dict[str, Any]] = None
         try:
@@ -296,6 +296,16 @@ class AnalyzerWorker(QObject):
             raise
         finally:
             self._stop_file_estimator()
+
+    @pyqtSlot()
+    def run(self) -> None:
+        """Entry point for executing the worker inside a dedicated thread."""
+        try:
+            asyncio.run(self.run_async())
+        except asyncio.CancelledError:
+            logger.debug("Analyzer worker cancelled", exc_info=True)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.error("Analyzer worker failed: %s", exc, exc_info=True)
 
     def _post_analysis_cache_maintenance(self, cache_path_setting: str, thread_count: int) -> None:
         """Flush pending cache writes and perform lightweight maintenance."""
