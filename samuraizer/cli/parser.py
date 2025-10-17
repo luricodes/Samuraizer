@@ -96,22 +96,16 @@ def parse_arguments(argv: Optional[list[str]] = None):
         help="Hash algorithm for verification (default from configuration).",
     )
     parser.add_argument(
-        "--include-binary",
+        "--no-cache",
+        action="store_true",
+        help="Disable file caching (slower but uses less disk space)",
+    )
+
+    parser.add_argument(
+        "--include-summary",
         action="store_true",
         default=None,
-        help="Includes binary files and image files in the analysis.",
-    )
-    parser.add_argument(
-        "--exclude-folders",
-        nargs="*",
-        default=None,
-        help="List of folder names to be excluded from the analysis.",
-    )
-    parser.add_argument(
-        "--exclude-files",
-        nargs="*",
-        default=None,
-        help="List of file names to be excluded from the analysis.",
+        help="Adds a summary of the analysis to the output file.",
     )
     parser.add_argument(
         "--follow-symlinks",
@@ -164,29 +158,6 @@ def parse_arguments(argv: Optional[list[str]] = None):
         type=int,
         default=None,
         help="Maximum file size to read in MB (default from configuration).",
-    )
-    parser.add_argument(
-        "--pool-size",
-        type=int,
-        default=5,
-        help="Size of the database connection pool (default: 5).",
-    )
-    parser.add_argument(
-        "--include-summary",
-        action="store_true",
-        default=None,
-        help="Adds a summary of the analysis to the output file.",
-    )
-    parser.add_argument(
-        "--cache-path",
-        type=str,
-        default=None,
-        help="Path to the cache directory (default from configuration).",
-    )
-    parser.add_argument(
-        "--no-cache",
-        action="store_true",
-        help="Disable file caching (slower but uses less disk space)",
     )
 
     args = parser.parse_args(argv)
