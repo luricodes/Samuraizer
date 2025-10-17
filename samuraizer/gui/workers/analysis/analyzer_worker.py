@@ -16,6 +16,7 @@ from samuraizer.backend.cache.cache_cleaner import check_and_vacuum_if_needed
 from samuraizer.backend.services.config_services import CACHE_DB_FILE
 from samuraizer.backend.cache.connection_pool import (
     initialize_connection_pool,
+    flush_pending_writes,
     is_cache_disabled,
     set_cache_disabled,
 )
@@ -293,6 +294,51 @@ class AnalyzerWorker(QObject):
             raise
         finally:
             self._stop_file_estimator()
+
+    def _post_analysis_cache_maintenance(self, cache_path_setting: str, thread_count: int) -> None:
+        """Flush pending cache writes and perform lightweight maintenance."""
+
+        cache_dir = Path(cache_path_setting).expanduser()
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            logger.error(f"Failed to ensure cache directory exists: {cache_dir}", exc_info=True)
+            return
+
+        cache_db_path = cache_dir / CACHE_DB_FILE
+
+        flush_timeout = max(5.0, float(thread_count) * 0.5)
+        try:
+            flushed = flush_pending_writes(timeout=flush_timeout)
+            if not flushed:
+                logger.warning(
+                    "Timed out waiting for pending cache writes to flush within %.1f seconds.",
+                    flush_timeout,
+                )
+        except Exception as exc:
+            logger.error(f"Failed to flush pending cache writes: {exc}", exc_info=True)
+
+        if not cache_db_path.exists():
+            logger.debug("Cache database not found at %s; skipping post-analysis maintenance.", cache_db_path)
+        else:
+            try:
+                check_and_vacuum_if_needed(cache_db_path)
+            except Exception as exc:
+                logger.error(
+                    "Cache maintenance failed for database %s: %s",
+                    cache_db_path,
+                    exc,
+                    exc_info=True,
+                )
+
+        try:
+            initialize_connection_pool(
+                str(cache_db_path.absolute()),
+                thread_count=thread_count,
+                force_disable_cache=is_cache_disabled(),
+            )
+        except Exception as exc:
+            logger.error(f"Failed to reinitialize cache connection pool: {exc}", exc_info=True)
 
     def _finalize_stop_summary(self, results: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Ensure stop metadata is captured in the summary."""
