@@ -247,25 +247,34 @@ class OutputOptionsWidget(QWidget):
         try:
             config_snapshot = self.get_configuration()
 
+            profile_kw = self._profile_storage_target()
             format_value = config_snapshot.get('format')
             if format_value:
-                self.config_manager.set_value("analysis.default_format", format_value)
+                self.config_manager.set_value(
+                    "analysis.default_format",
+                    format_value,
+                    profile=profile_kw,
+                )
 
             self.config_manager.set_value(
                 "analysis.include_summary",
                 bool(config_snapshot.get('include_summary', True)),
+                profile=profile_kw,
             )
             self.config_manager.set_value(
                 "output.streaming",
                 bool(config_snapshot.get('streaming', False)),
+                profile=profile_kw,
             )
             self.config_manager.set_value(
                 "output.pretty_print",
                 bool(config_snapshot.get('pretty_print', False)),
+                profile=profile_kw,
             )
             self.config_manager.set_value(
                 "output.compression",
                 bool(config_snapshot.get('use_compression', False)),
+                profile=profile_kw,
             )
 
             # Only save settings if auto-save is enabled
@@ -340,6 +349,14 @@ class OutputOptionsWidget(QWidget):
             self.config_manager.remove_change_listener(self._handle_config_change)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Error detaching output settings listener: %s", exc)
+
+    def _profile_storage_target(self) -> Optional[str]:
+        """Return the profile section used for persistence."""
+
+        active_profile = self.config_manager.active_profile
+        if active_profile == "default":
+            return None
+        return active_profile
 
     @classmethod
     def _format_label(cls, value: Optional[str]) -> str:

@@ -286,19 +286,68 @@ class UIAnalysisConfigCollector(AnalysisConfigCollector):
         )
 
         config_manager = UnifiedConfigManager()
-        config_manager.set_value("analysis.max_file_size_mb", repo_cfg.max_file_size)
-        config_manager.set_value("analysis.include_binary", repo_cfg.include_binary)
-        config_manager.set_value("analysis.follow_symlinks", repo_cfg.follow_symlinks)
-        config_manager.set_value("analysis.encoding", repo_cfg.encoding or "auto")
-        config_manager.set_value("analysis.threads", repo_cfg.thread_count)
+        profile_kw = (
+            None
+            if config_manager.active_profile == "default"
+            else config_manager.active_profile
+        )
+        config_manager.set_value(
+            "analysis.max_file_size_mb",
+            repo_cfg.max_file_size,
+            profile=profile_kw,
+        )
+        config_manager.set_value(
+            "analysis.include_binary",
+            repo_cfg.include_binary,
+            profile=profile_kw,
+        )
+        config_manager.set_value(
+            "analysis.follow_symlinks",
+            repo_cfg.follow_symlinks,
+            profile=profile_kw,
+        )
+        config_manager.set_value(
+            "analysis.encoding",
+            repo_cfg.encoding or "auto",
+            profile=profile_kw,
+        )
+        config_manager.set_value(
+            "analysis.threads",
+            repo_cfg.thread_count,
+            profile=profile_kw,
+        )
         if repo_cfg.cache_path:
-            config_manager.set_value("cache.path", repo_cfg.cache_path)
+            config_manager.set_value(
+                "cache.path",
+                repo_cfg.cache_path,
+                profile=profile_kw,
+            )
         if output_cfg.format:
-            config_manager.set_value("analysis.default_format", output_cfg.format)
-        config_manager.set_value("analysis.include_summary", output_cfg.include_summary)
-        config_manager.set_value("output.streaming", output_cfg.streaming)
-        config_manager.set_value("output.pretty_print", output_cfg.pretty_print)
-        config_manager.set_value("output.compression", output_cfg.use_compression)
+            config_manager.set_value(
+                "analysis.default_format",
+                output_cfg.format,
+                profile=profile_kw,
+            )
+        config_manager.set_value(
+            "analysis.include_summary",
+            output_cfg.include_summary,
+            profile=profile_kw,
+        )
+        config_manager.set_value(
+            "output.streaming",
+            output_cfg.streaming,
+            profile=profile_kw,
+        )
+        config_manager.set_value(
+            "output.pretty_print",
+            output_cfg.pretty_print,
+            profile=profile_kw,
+        )
+        config_manager.set_value(
+            "output.compression",
+            output_cfg.use_compression,
+            profile=profile_kw,
+        )
 
         return AnalysisConfig(
             repository=repo_cfg,

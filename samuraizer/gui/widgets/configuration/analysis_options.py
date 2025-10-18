@@ -208,12 +208,34 @@ class AnalysisOptionsWidget(QWidget):
             self.settings.remove("analysis/pool_size")
 
             # Synchronise with unified configuration
-            self.config_manager.set_value("analysis.max_file_size_mb", self.analysis_config_widget.max_size.value())
-            self.config_manager.set_value("analysis.include_binary", self.analysis_config_widget.include_binary.isChecked())
-            self.config_manager.set_value("analysis.follow_symlinks", self.analysis_config_widget.follow_symlinks.isChecked())
+            profile_kw = self._profile_storage_target()
+
+            self.config_manager.set_value(
+                "analysis.max_file_size_mb",
+                self.analysis_config_widget.max_size.value(),
+                profile=profile_kw,
+            )
+            self.config_manager.set_value(
+                "analysis.include_binary",
+                self.analysis_config_widget.include_binary.isChecked(),
+                profile=profile_kw,
+            )
+            self.config_manager.set_value(
+                "analysis.follow_symlinks",
+                self.analysis_config_widget.follow_symlinks.isChecked(),
+                profile=profile_kw,
+            )
             encoding = self.analysis_config_widget.encoding.currentText() or "auto"
-            self.config_manager.set_value("analysis.encoding", encoding)
-            self.config_manager.set_value("analysis.threads", self.threading_options_widget.thread_count.value())
+            self.config_manager.set_value(
+                "analysis.encoding",
+                encoding,
+                profile=profile_kw,
+            )
+            self.config_manager.set_value(
+                "analysis.threads",
+                self.threading_options_widget.thread_count.value(),
+                profile=profile_kw,
+            )
 
         except Exception as e:
             logger.error(f"Error saving settings: {e}", exc_info=True)
@@ -292,3 +314,11 @@ class AnalysisOptionsWidget(QWidget):
             self.config_manager.remove_change_listener(self._handle_config_change)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("Error detaching analysis options listener: %s", exc)
+
+    def _profile_storage_target(self) -> str | None:
+        """Return the profile section used for persistence."""
+
+        active_profile = self.config_manager.active_profile
+        if active_profile == "default":
+            return None
+        return active_profile
