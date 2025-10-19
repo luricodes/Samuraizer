@@ -1,5 +1,4 @@
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -18,6 +17,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .path_utils import DEFAULT_BASENAME, sanitize_filename, extension_for_format
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,13 +36,15 @@ class OutputFileGroup(QGroupBox):
         self._current_extension: str = ".json"
         self._current_path: str = ""
         self._repository_path: str = ""
-        self._repository_name: str = "analysis"
+        self._repository_name: str = DEFAULT_BASENAME
         self._timestamp_fragment: Optional[str] = None
         self._auto_directory: bool = True
         self._auto_filename: bool = True
         self._loading: bool = False
+        self._path_source: str = "default"
 
         self._build_ui()
+        self.set_path_source("default")
 
     # ------------------------------------------------------------------ #
     # UI creation
@@ -157,9 +160,9 @@ class OutputFileGroup(QGroupBox):
 
         if repository_path:
             repo_name = Path(repository_path).name
-            self._repository_name = self._sanitize_name(repo_name)
+            self._repository_name = sanitize_filename(repo_name)
         else:
-            self._repository_name = "analysis"
+            self._repository_name = DEFAULT_BASENAME
 
         if repository_path and (self._auto_directory or not self.directory_edit.text().strip()):
             self._auto_directory = True
@@ -175,6 +178,8 @@ class OutputFileGroup(QGroupBox):
                 self._ensure_timestamp()
 
         self._update_preview()
+        if repository_path:
+            self.set_path_source("repository")
 
     # ------------------------------------------------------------------ #
     # Slots and helpers
@@ -184,6 +189,7 @@ class OutputFileGroup(QGroupBox):
 
     def _mark_directory_overridden(self, _value: str) -> None:
         self._auto_directory = False
+        self.set_path_source("custom")
 
     def _on_template_changed(self, _index: int) -> None:
         template_key = self.naming_template.currentData()
@@ -208,6 +214,7 @@ class OutputFileGroup(QGroupBox):
 
     def _mark_filename_overridden(self, _value: str) -> None:
         self._auto_filename = False
+        self.set_path_source("custom")
 
     def _browse_for_directory(self) -> None:
         start_dir = self.directory_edit.text().strip() or self._repository_path or str(Path.home())
@@ -215,12 +222,14 @@ class OutputFileGroup(QGroupBox):
         if directory:
             self.directory_edit.setText(directory)
             self._auto_directory = False
+            self.set_path_source("custom")
 
     def _use_repository_directory(self) -> None:
         if not self._repository_path:
             return
         self.directory_edit.setText(self._repository_path)
         self._auto_directory = True
+        self.set_path_source("repository")
 
     def _refresh_timestamp(self) -> None:
         self._timestamp_fragment = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -236,7 +245,7 @@ class OutputFileGroup(QGroupBox):
             format_key = format_name.lower()
 
         self._current_format = format_key
-        extension = self.get_file_extension(format_key) or ".txt"
+        extension = extension_for_format(format_key)
         if not extension.startswith("."):
             extension = f".{extension}"
         self._current_extension = extension
@@ -293,6 +302,91 @@ class OutputFileGroup(QGroupBox):
     def get_output_path(self) -> str:
         return self._current_path
 
+    def set_output_path(self, full_path: str) -> None:
+        """Update the UI to reflect a concrete output path."""
+        self._loading = True
+        try:
+            if not full_path:
+                self.directory_edit.blockSignals(True)
+                self.directory_edit.clear()
+                self.directory_edit.blockSignals(False)
+                custom_index = self.naming_template.findData("custom")
+                if custom_index >= 0:
+                    self.naming_template.blockSignals(True)
+                    self.naming_template.setCurrentIndex(custom_index)
+                    self.naming_template.blockSignals(False)
+                self.custom_name_edit.blockSignals(True)
+                self.custom_name_edit.clear()
+                self.custom_name_edit.blockSignals(False)
+                self._current_path = ""
+                return
+
+            path_obj = Path(full_path)
+            directory = str(path_obj.parent)
+            stem = path_obj.stem or sanitize_filename(path_obj.name)
+            extension = path_obj.suffix or self._current_extension or ".json"
+
+            self.directory_edit.blockSignals(True)
+            self.directory_edit.setText(directory)
+            self.directory_edit.blockSignals(False)
+            self._auto_directory = False
+
+            custom_index = self.naming_template.findData("custom")
+            if custom_index < 0:
+                custom_index = 0
+            self.naming_template.blockSignals(True)
+            self.naming_template.setCurrentIndex(custom_index)
+            self.naming_template.blockSignals(False)
+
+            self.custom_name_edit.blockSignals(True)
+            self.custom_name_edit.setText(stem)
+            self.custom_name_edit.blockSignals(False)
+            self._auto_filename = False
+
+            if extension:
+                if not extension.startswith("."):
+                    extension = f".{extension}"
+                self._current_extension = extension
+
+            self._current_path = str(path_obj.with_suffix(self._current_extension))
+        except Exception as exc:
+            logger.error("Failed to set output path from profile: %s", exc, exc_info=True)
+        finally:
+            try:
+                self._update_preview()
+            finally:
+                self._loading = False
+
+    def set_path_source(self, source: str) -> None:
+        """Annotate the preview with context about the active path."""
+        self._path_source = source
+        if source == "profile":
+            tooltip = "Output path provided by the active profile."
+            style = "font-weight: 600;"
+        elif source == "custom":
+            tooltip = "Output path customised for this session."
+            style = "font-weight: 500;"
+        elif source == "repository":
+            tooltip = "Output path derived from the active repository."
+            style = "font-weight: 500;"
+        else:
+            tooltip = "Output path derived from default settings."
+            style = "font-style: italic; font-weight: 500;"
+        self.preview_frame.setToolTip(tooltip)
+        self.preview_label.setStyleSheet(style)
+
+    def get_path_source(self) -> str:
+        return self._path_source
+
+    def get_repository_path(self) -> str:
+        return self._repository_path
+
+    def get_current_extension(self) -> str:
+        return self._current_extension or ".json"
+
+    def get_preview_filename(self) -> str:
+        return self._generate_filename()
+
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
@@ -305,8 +399,8 @@ class OutputFileGroup(QGroupBox):
 
     def _generate_filename(self) -> str:
         template_key = self.naming_template.currentData()
-        repo_name = self._repository_name or "analysis"
-        format_base = self._sanitize_name(self._current_format)
+        repo_name = self._repository_name or DEFAULT_BASENAME
+        format_base = sanitize_filename(self._current_format)
 
         if template_key == "repo":
             return repo_name
@@ -320,7 +414,7 @@ class OutputFileGroup(QGroupBox):
             return f"{format_base}_{self._timestamp_fragment}"
 
         custom_value = self.custom_name_edit.text().strip()
-        return self._sanitize_name(custom_value) or repo_name
+        return sanitize_filename(custom_value) or repo_name
 
     def _update_preview(self) -> None:
         filename = self._generate_filename()
@@ -340,10 +434,4 @@ class OutputFileGroup(QGroupBox):
         if not self._loading:
             self.outputPathChanged.emit(self._current_path)
 
-    @staticmethod
-    def _sanitize_name(value: str) -> str:
-        if not value:
-            return "analysis"
-        sanitized = re.sub(r"[^\w\-]+", "-", value.strip())
-        sanitized = sanitized.strip("-_")
-        return sanitized or "analysis"
+        

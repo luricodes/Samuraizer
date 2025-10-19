@@ -14,7 +14,7 @@ _PROFILE_SECTION_KEY_MAP: Dict[str, Set[str]] = {
         "cache_enabled",
         "include_summary",
     },
-    "output": {"compression", "streaming", "pretty_print"},
+    "output": {"compression", "streaming", "pretty_print", "path"},
     "cache": {"path", "size_limit_mb", "cleanup_days"},
     "theme": {"name"},
     "timezone": {"use_utc", "repository_timezone"},

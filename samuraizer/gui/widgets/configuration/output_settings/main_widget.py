@@ -1,10 +1,10 @@
 # samuraizer/gui/widgets/configuration/output_settings/main_widget.py
 
-import os
 import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
+
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QMessageBox
 from PyQt6.QtCore import pyqtSignal
 
@@ -13,9 +13,19 @@ from .output_file_group import OutputFileGroup
 from .format_selection_group import FormatSelectionGroup
 from .streaming_options_group import StreamingOptionsGroup
 from .additional_options_group import AdditionalOptionsGroup
+from .path_utils import (
+    DEFAULT_BASENAME,
+    derive_default_output_path,
+    extension_for_format,
+    normalise_output_path,
+    validate_output_path as is_valid_output_path,
+)
+from samuraizer.config.defaults import DEFAULT_CONFIG
 from samuraizer.config.unified import UnifiedConfigManager
 
 logger = logging.getLogger(__name__)
+
+_PATH_UNCHANGED = object()
 
 class OutputOptionsWidget(QWidget):
     """Widget for configuring analysis output options"""
@@ -61,7 +71,7 @@ class OutputOptionsWidget(QWidget):
         # Output File Group
         self.output_file_group = OutputFileGroup(
             settings_manager=self.settings_manager,
-            get_file_extension_callback=self.get_file_extension
+            get_file_extension_callback=extension_for_format,
         )
         self.output_file_group.outputPathChanged.connect(self.on_output_path_changed)
         layout.addWidget(self.output_file_group)
@@ -86,20 +96,6 @@ class OutputOptionsWidget(QWidget):
 
         # Ensure output file extension reflects the initial state
         self.output_file_group.set_format(self.format_selection_group.get_selected_format())
-
-    def get_file_extension(self, format_name: str) -> str:
-        """Get the appropriate file extension for the selected format"""
-        extensions = {
-            "json": ".json",
-            "yaml": ".yaml",
-            "xml": ".xml",
-            "jsonl": ".jsonl",
-            "dot": ".dot",
-            "csv": ".csv",
-            "s-expression": ".sexp",
-            "messagepack": ".msgpack"
-        }
-        return extensions.get(format_name.lower(), ".txt")
 
     def on_format_changed(self, format_name: str):
         """Handle format selection changes"""
@@ -158,6 +154,7 @@ class OutputOptionsWidget(QWidget):
         """Handle output path changes"""
         if self._initializing or self._config_sync_lock:
             return
+        self.output_file_group.set_path_source("custom")
         self.emit_configuration_changed()
         self.saveSettings()
 
@@ -198,46 +195,19 @@ class OutputOptionsWidget(QWidget):
         target_path = path or self.output_file_group.get_output_path()
         if not target_path:
             return False
-
         try:
-            output_path = Path(target_path)
-            output_dir = output_path.parent
-
-            # Check if directory exists or can be created
-            if not output_dir.exists():
-                return output_dir.parent.exists() and output_dir.parent.is_dir()
-
-            # Check if directory is writable
-            return os.access(output_dir, os.W_OK)
-
-        except Exception as e:
-            logger.error(f"Error validating output path: {e}", exc_info=True)
+            canonical = normalise_output_path(target_path)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Failed to normalise output path %s: %s", target_path, exc, exc_info=True)
             return False
+        return is_valid_output_path(canonical)
 
     def loadSettings(self):
-        """Load saved output settings"""
+        """Load saved output settings and migrate legacy preferences."""
         try:
-            # Only load settings if auto-save is enabled
-            auto_save = self.settings_manager.load_setting("settings/auto_save", False, type_=bool)
-            if auto_save:
-                # Load format selection first
-                format_name = self.settings_manager.load_setting("output/format", "Choose Output Format")
-                if format_name:
-                    self.format_selection_group.set_selected_format(format_name)
-
-                # Load other settings
-                streaming_enabled = self.settings_manager.load_setting("output/streaming", False, type_=bool)
-                self.streaming_options_group.enable_streaming.setChecked(streaming_enabled)
-                self.additional_options_group.load_settings(self.settings_manager)
-
-                # Load last output path
-                self.output_file_group.load_settings()
-
-                # Update UI based on format - ensures proper visibility and states
-                self.on_format_changed(self.format_selection_group.get_selected_format())
-
-        except Exception as e:
-            logger.error(f"Error loading output settings: {e}", exc_info=True)
+            self._migrate_output_settings()
+        except Exception as exc:
+            logger.error("Error migrating output settings: %s", exc, exc_info=True)
         finally:
             self._apply_profile_settings()
 
@@ -263,15 +233,17 @@ class OutputOptionsWidget(QWidget):
             if format_value:
                 updates["analysis.default_format"] = format_value
 
-            self.config_manager.set_values_batch(updates, profile=profile_kw)
+            output_path_raw = config_snapshot.get('output_path') or ""
+            output_path = None
+            if output_path_raw:
+                try:
+                    output_path = normalise_output_path(output_path_raw)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.error("Failed to normalise output path %s: %s", output_path_raw, exc, exc_info=True)
+                    output_path = output_path_raw
+            updates["output.path"] = output_path
 
-            # Only save settings if auto-save is enabled
-            auto_save = self.settings_manager.load_setting("settings/auto_save", False, type_=bool)
-            if auto_save:
-                self.settings_manager.save_setting("output/format", self.format_selection_group.get_selected_format())
-                self.settings_manager.save_setting("output/streaming", self.streaming_options_group.enable_streaming.isChecked())
-                self.additional_options_group.save_settings(self.settings_manager)
-                self.output_file_group.save_settings(self.settings_manager)
+            self.config_manager.set_values_batch(updates, profile=profile_kw)
         except Exception as e:
             logger.error(f"Error saving output settings: {e}", exc_info=True)
 
@@ -281,53 +253,139 @@ class OutputOptionsWidget(QWidget):
     def _apply_profile_settings(self) -> None:
         if self._config_sync_lock:
             return
+
+        path_update = _PATH_UNCHANGED
         with self._suspend_config_sync():
             try:
                 config = self.config_manager.get_active_profile_config()
+            except Exception as exc:
+                logger.error(
+                    "Error retrieving profile configuration: %s", exc, exc_info=True
+                )
+            else:
                 analysis_cfg = config.get("analysis", {})
                 output_cfg = config.get("output", {})
 
-                format_label = self._format_label(analysis_cfg.get("default_format"))
-                if not format_label:
-                    format_label = "Choose Output Format"
-                format_combo = self.format_selection_group.format_combo
-                format_combo.blockSignals(True)
-                self.format_selection_group.set_selected_format(format_label)
-                format_combo.blockSignals(False)
-                self.on_format_changed(self.format_selection_group.get_selected_format())
-
-                streaming_checkbox = self.streaming_options_group.enable_streaming
-                desired_streaming = bool(output_cfg.get("streaming", False))
-                streaming_checkbox.blockSignals(True)
-                streaming_checkbox.setChecked(desired_streaming and streaming_checkbox.isEnabled())
-                streaming_checkbox.blockSignals(False)
-
-                include_summary_box = self.additional_options_group.include_summary
-                include_summary_box.blockSignals(True)
-                include_summary_box.setChecked(bool(analysis_cfg.get("include_summary", True)))
-                include_summary_box.blockSignals(False)
-
-                pretty_box = self.additional_options_group.pretty_print
-                pretty_box.blockSignals(True)
-                if pretty_box.isVisible():
-                    pretty_box.setChecked(bool(output_cfg.get("pretty_print", True)))
-                else:
-                    pretty_box.setChecked(False)
-                pretty_box.blockSignals(False)
-
-                compression_box = self.additional_options_group.use_compression
-                compression_box.blockSignals(True)
-                if compression_box.isVisible():
-                    compression_box.setChecked(bool(output_cfg.get("compression", False)))
-                else:
-                    compression_box.setChecked(False)
-                compression_box.blockSignals(False)
-
-            except Exception as exc:
-                logger.error("Error applying profile output settings: %s", exc, exc_info=True)
+                self._sync_format_controls(analysis_cfg)
+                self._sync_streaming_controls(output_cfg)
+                self._sync_additional_options(analysis_cfg, output_cfg)
+                path_update = self._sync_output_path(analysis_cfg, output_cfg)
 
         if not self._initializing:
             self.emit_configuration_changed()
+
+        if path_update is not _PATH_UNCHANGED:
+            try:
+                self.config_manager.set_values_batch(
+                    {"output.path": path_update},
+                    profile=self._profile_storage_target(),
+                    notify=False,
+                )
+            except Exception as exc:
+                logger.error(
+                    "Failed to persist fallback output path: %s", exc, exc_info=True
+                )
+
+    def _sync_format_controls(self, analysis_cfg: dict) -> None:
+        format_label = self._format_label(analysis_cfg.get("default_format"))
+        if not format_label:
+            format_label = "Choose Output Format"
+        format_combo = self.format_selection_group.format_combo
+        format_combo.blockSignals(True)
+        self.format_selection_group.set_selected_format(format_label)
+        format_combo.blockSignals(False)
+        self.on_format_changed(self.format_selection_group.get_selected_format())
+
+    def _sync_streaming_controls(self, output_cfg: dict) -> None:
+        streaming_checkbox = self.streaming_options_group.enable_streaming
+        desired_streaming = bool(output_cfg.get("streaming", False))
+        streaming_checkbox.blockSignals(True)
+        streaming_checkbox.setChecked(
+            desired_streaming and streaming_checkbox.isEnabled()
+        )
+        streaming_checkbox.blockSignals(False)
+
+    def _sync_additional_options(self, analysis_cfg: dict, output_cfg: dict) -> None:
+        include_summary_box = self.additional_options_group.include_summary
+        include_summary_box.blockSignals(True)
+        include_summary_box.setChecked(
+            bool(analysis_cfg.get("include_summary", True))
+        )
+        include_summary_box.blockSignals(False)
+
+        pretty_box = self.additional_options_group.pretty_print
+        pretty_box.blockSignals(True)
+        pretty_enabled = bool(output_cfg.get("pretty_print", True))
+        if not pretty_box.isVisible():
+            pretty_enabled = False
+        pretty_box.setChecked(pretty_enabled)
+        pretty_box.blockSignals(False)
+
+        compression_box = self.additional_options_group.use_compression
+        compression_box.blockSignals(True)
+        compression_enabled = bool(output_cfg.get("compression", False))
+        if not compression_box.isVisible():
+            compression_enabled = False
+        compression_box.setChecked(compression_enabled)
+        compression_box.blockSignals(False)
+
+    def _sync_output_path(self, analysis_cfg: dict, output_cfg: dict) -> object:
+        desired_path_raw = output_cfg.get("path")
+        desired_path_text = str(desired_path_raw).strip() if desired_path_raw else ""
+        normalised_profile_path = ""
+        if desired_path_text:
+            try:
+                normalised_profile_path = normalise_output_path(desired_path_text)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to normalise profile output path '%s': %s",
+                    desired_path_text,
+                    exc,
+                )
+                normalised_profile_path = desired_path_text
+            if normalised_profile_path and not is_valid_output_path(normalised_profile_path):
+                logger.warning(
+                    "Profile specified output path '%s' is invalid; falling back to defaults.",
+                    desired_path_text,
+                )
+                normalised_profile_path = ""
+
+        repository_path = self.output_file_group.get_repository_path().strip()
+        repository_normalised = ""
+        if repository_path:
+            try:
+                repository_normalised = normalise_output_path(repository_path)
+            except Exception:  # pragma: no cover - defensive
+                repository_normalised = repository_path
+
+        path_source = "default"
+        path_update = _PATH_UNCHANGED
+
+        if normalised_profile_path:
+            self.output_file_group.set_output_path(normalised_profile_path)
+            path_source = "profile"
+            if normalised_profile_path != desired_path_text:
+                path_update = normalised_profile_path
+        else:
+            fallback_path = self._determine_default_output_path(analysis_cfg)
+            if fallback_path:
+                self.output_file_group.set_output_path(fallback_path)
+                if repository_normalised and self._is_within_repository(
+                    fallback_path, repository_normalised
+                ):
+                    path_source = "repository"
+                else:
+                    path_source = "default"
+                if fallback_path != desired_path_text:
+                    path_update = fallback_path
+            else:
+                self.output_file_group.set_output_path("")
+                path_source = "default"
+                if desired_path_text:
+                    path_update = None
+
+        self.output_file_group.set_path_source(path_source)
+        return path_update
 
     def _handle_config_change(self) -> None:
         self._apply_profile_settings()
@@ -378,3 +436,145 @@ class OutputOptionsWidget(QWidget):
 
     def apply_repository_context(self, repository_path: str) -> None:
         self.output_file_group.apply_repository_defaults(repository_path)
+        if self.output_file_group.get_path_source() in {"default", "repository"}:
+            fallback = self._determine_default_output_path()
+            if fallback:
+                try:
+                    repository_normalised = normalise_output_path(repository_path)
+                except Exception:  # pragma: no cover - defensive
+                    repository_normalised = repository_path
+                path_source = (
+                    "repository"
+                    if repository_normalised
+                    and self._is_within_repository(fallback, repository_normalised)
+                    else "default"
+                )
+                with self._suspend_config_sync():
+                    self.output_file_group.set_output_path(fallback)
+                    self.output_file_group.set_path_source(path_source)
+                try:
+                    self.config_manager.set_values_batch(
+                        {"output.path": fallback},
+                        profile=self._profile_storage_target(),
+                        notify=False,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Failed to persist repository-derived output path: %s",
+                        exc,
+                        exc_info=True,
+                    )
+                if not self._initializing:
+                    self.emit_configuration_changed()
+
+    def _determine_default_output_path(
+        self, analysis_cfg: Optional[dict] = None
+    ) -> Optional[str]:
+        """Compute a sensible default output path when profiles lack one."""
+
+        if analysis_cfg is None:
+            try:
+                analysis_cfg = (
+                    self.config_manager.get_active_profile_config().get("analysis", {})
+                )
+            except Exception:  # pragma: no cover - defensive
+                analysis_cfg = {}
+
+        filename = self.output_file_group.get_preview_filename() or DEFAULT_BASENAME
+        extension = self.output_file_group.get_current_extension()
+        if not extension:
+            format_key = analysis_cfg.get("default_format")
+            if not format_key:
+                format_key = DEFAULT_CONFIG.get("analysis", {}).get(
+                    "default_format", "json"
+                )
+            extension = extension_for_format(format_key)
+
+        repository_path = self.output_file_group.get_repository_path() or None
+        fallback = derive_default_output_path(repository_path, filename, extension)
+        if fallback:
+            try:
+                return normalise_output_path(fallback)
+            except Exception:  # pragma: no cover - defensive
+                return fallback
+        return None
+
+    @staticmethod
+    def _is_within_repository(candidate: str, repository_path: str) -> bool:
+        try:
+            candidate_path = Path(candidate).resolve(strict=False)
+            repo_path = Path(repository_path).resolve(strict=False)
+        except Exception:  # pragma: no cover - defensive
+            return False
+        try:
+            candidate_path.relative_to(repo_path)
+            return True
+        except ValueError:
+            return False
+
+    def _migrate_output_settings(self) -> None:
+        """Populate profile storage with legacy QSettings preferences."""
+        migrated_flag = self.settings_manager.load_setting(
+            "output/migrated_to_profiles", False, type_=bool
+        )
+        if migrated_flag:
+            return
+
+        config = self.config_manager.get_active_profile_config()
+        analysis_cfg = config.get("analysis", {})
+        output_cfg = config.get("output", {})
+        updates = {}
+
+        stored_format = self.settings_manager.load_setting("output/format", "")
+        if stored_format:
+            stored_format = str(stored_format).strip()
+            if stored_format and stored_format.lower() != analysis_cfg.get("default_format"):
+                updates["analysis.default_format"] = stored_format.lower()
+
+        streaming_pref = self.settings_manager.load_setting("output/streaming", None, type_=bool)
+        if streaming_pref is not None and bool(streaming_pref) != bool(output_cfg.get("streaming")):
+            updates["output.streaming"] = bool(streaming_pref)
+
+        include_summary = self.settings_manager.load_setting("output/include_summary", None, type_=bool)
+        if include_summary is not None and bool(include_summary) != bool(analysis_cfg.get("include_summary", True)):
+            updates["analysis.include_summary"] = bool(include_summary)
+
+        pretty_pref = self.settings_manager.load_setting("output/pretty_print", None, type_=bool)
+        if pretty_pref is not None and bool(pretty_pref) != bool(output_cfg.get("pretty_print", DEFAULT_CONFIG["output"].get("pretty_print", True))):
+            updates["output.pretty_print"] = bool(pretty_pref)
+
+        compression_pref = self.settings_manager.load_setting("output/use_compression", None, type_=bool)
+        if compression_pref is not None and bool(compression_pref) != bool(output_cfg.get("compression", DEFAULT_CONFIG["output"].get("compression", False))):
+            updates["output.compression"] = bool(compression_pref)
+
+        legacy_path = self.settings_manager.load_setting("output/last_path", "")
+        if legacy_path and not output_cfg.get("path"):
+            try:
+                legacy_normalised = normalise_output_path(str(legacy_path))
+            except Exception as exc:
+                logger.warning(
+                    "Failed to normalise legacy output path '%s': %s",
+                    legacy_path,
+                    exc,
+                )
+                legacy_normalised = str(legacy_path)
+            if is_valid_output_path(legacy_normalised):
+                updates["output.path"] = legacy_normalised
+            else:
+                logger.warning(
+                    "Discarding legacy output path '%s' because the directory is not writable.",
+                    legacy_path,
+                )
+
+        if updates:
+            try:
+                self.config_manager.set_values_batch(
+                    updates,
+                    profile=self._profile_storage_target(),
+                    notify=False,
+                )
+            except Exception as exc:
+                logger.error("Failed migrating legacy output settings: %s", exc, exc_info=True)
+                return
+
+        self.settings_manager.save_setting("output/migrated_to_profiles", True)

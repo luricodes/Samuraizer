@@ -40,6 +40,7 @@ include = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".
 compression = false
 streaming = false  # auto-enabled for jsonl, msgpack
 pretty_print = true
+path = ""
 
 [theme]
 name = "dark"  # only applies to gui mode
@@ -145,8 +146,10 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 "compression": {"type": "boolean"},
                 "streaming": {"type": "boolean"},
                 "pretty_print": {"type": "boolean"},
+                "path": {"type": "string"},
             },
             "required": ["compression", "streaming", "pretty_print"],
+            "additionalProperties": True,
         },
         "theme": {
             "type": "object",

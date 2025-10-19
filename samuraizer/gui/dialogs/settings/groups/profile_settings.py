@@ -15,9 +15,17 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QInputDialog,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSettings
 
 from samuraizer.config import ConfigError, ConfigValidationError
+from samuraizer.gui.widgets.configuration.output_settings.path_utils import (
+    DEFAULT_BASENAME,
+    derive_default_output_path,
+    extension_for_format,
+    normalise_output_path,
+    sanitize_filename,
+    validate_output_path as is_valid_output_path,
+)
 from ..base import BaseSettingsGroup
 
 logger = logging.getLogger(__name__)
@@ -163,6 +171,74 @@ class ProfileSettingsGroup(BaseSettingsGroup):
             return None
         return name
 
+    def _seed_profile_output_path(self, profile: str) -> None:
+        try:
+            resolved = self.config_manager.resolve_profile(profile).config
+        except ConfigError as exc:
+            logger.debug(
+                "Unable to resolve profile '%s' for output path seeding: %s",
+                profile,
+                exc,
+            )
+            return
+
+        output_cfg = resolved.get("output", {})
+        if output_cfg.get("path"):
+            return
+
+        analysis_cfg = resolved.get("analysis", {})
+        repository_path = self._current_repository_path()
+        filename = DEFAULT_BASENAME
+        if repository_path:
+            try:
+                filename = sanitize_filename(Path(repository_path).name)
+            except Exception:  # pragma: no cover - defensive
+                filename = DEFAULT_BASENAME
+
+        extension = extension_for_format(analysis_cfg.get("default_format"))
+        candidate_path = derive_default_output_path(repository_path, filename, extension)
+        if not candidate_path:
+            return
+
+        try:
+            candidate_path = normalise_output_path(candidate_path)
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+        if not is_valid_output_path(candidate_path):
+            logger.debug(
+                "Skipping output path seed for profile '%s' because '%s' is not writable",
+                profile,
+                candidate_path,
+            )
+            return
+
+        try:
+            self.config_manager.set_values_batch(
+                {"output.path": candidate_path},
+                profile=profile,
+                notify=False,
+            )
+        except ConfigError as exc:
+            logger.debug(
+                "Unable to persist default output path for profile '%s': %s",
+                profile,
+                exc,
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "Unexpected error while seeding output path for profile '%s': %s",
+                profile,
+                exc,
+            )
+
+    @staticmethod
+    def _current_repository_path() -> Optional[str]:
+        settings = QSettings()
+        repo_value = settings.value("analysis/last_repository", "")
+        repo_text = str(repo_value or "").strip()
+        return repo_text or None
+
     # ------------------------------------------------------------------ #
     # Slots
     # ------------------------------------------------------------------ #
@@ -185,6 +261,7 @@ class ProfileSettingsGroup(BaseSettingsGroup):
             return
         try:
             self.config_manager.create_profile(name, inherit=inherit)
+            self._seed_profile_output_path(name)
             self.config_manager.set_active_profile(name)
             self._refresh_profiles()
         except ConfigError as exc:

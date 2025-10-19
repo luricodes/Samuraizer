@@ -394,25 +394,6 @@ class ResultsViewWidget(QWidget):
                 status_msg = "Analysis completed"
             self.progress_monitor.updateStatus(status_msg)
 
-            # Auto-save functionality using Output Options settings
-            auto_save_enabled = self.settings.value("settings/auto_save", False, type=bool)
-            if auto_save_enabled and results:
-                try:
-                    # Get settings from Output Options
-                    output_format = self.settings.value("output/format", "json")
-                    output_path = self.settings.value("output/last_path", "")
-                    
-                    if output_path:
-                        # Export the results using Output Options settings
-                        self.exportResults(results, output_path)
-                        self.progress_monitor.updateStatus(f"Results auto-saved to {output_path}")
-                    else:
-                        logger.warning("Auto-save failed: No output path set in Output Options")
-                        self.progress_monitor.updateStatus("Auto-save failed: No output path set in Output Options")
-                except Exception as e:
-                    logger.error(f"Auto-save failed: {e}", exc_info=True)
-                    self.progress_monitor.updateStatus("Auto-save failed")
-            
         except Exception as e:
             logger.error(f"Error handling analysis results: {e}", exc_info=True)
             self.handleError(f"Error processing results: {str(e)}")
