@@ -25,7 +25,7 @@ class GeneralSettingsGroup(BaseSettingsGroup):
             layout.setSpacing(10)
 
             info_label = QLabel(
-                "Output options are now saved automatically with each profile."
+                "Output options are saved automatically with each profile."
             )
             info_label.setWordWrap(True)
             info_label.setStyleSheet("color: gray;")
