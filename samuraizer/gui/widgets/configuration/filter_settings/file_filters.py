@@ -13,7 +13,7 @@ import fnmatch
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
@@ -347,6 +347,7 @@ class FileFiltersWidget(QWidget):
         self.config_manager = UnifiedConfigManager()
         self.config_listener = FilterConfigListener(self)
         self._syncing_config = False
+        self._last_filters_snapshot: Optional[Dict[str, Tuple[str, ...]]] = None
         self.config_manager.add_change_listener(self._handle_config_change)
         self.destroyed.connect(self._on_destroyed)
         self._setup_ui()
@@ -499,13 +500,13 @@ class FileFiltersWidget(QWidget):
         self._apply_styles()
 
     # ------------------------------------------------------------------
-    def load_settings(self) -> None:
+    def load_settings(self, config: Optional[Dict[str, Any]] = None) -> None:
         """Load settings from configuration manager."""
         if self._syncing_config:
             return
         self._syncing_config = True
         try:
-            config = self.config_manager.get_active_profile_config()
+            config = config or self.config_manager.get_active_profile_config()
             exclusions = config.get("exclusions", {})
 
             excluded_folders = set(
@@ -526,6 +527,12 @@ class FileFiltersWidget(QWidget):
             self.patterns_list.set_patterns(exclude_patterns)
             self.image_list.set_items(image_extensions)
 
+            self._last_filters_snapshot = self._build_snapshot(
+                excluded_folders,
+                excluded_files,
+                exclude_patterns,
+                image_extensions,
+            )
             logger.info("Filter settings loaded successfully")
             self._update_summary()
             self._update_preview_status()
@@ -572,6 +579,13 @@ class FileFiltersWidget(QWidget):
             self._update_summary(config_snapshot)
             self._update_preview_status(config_snapshot)
 
+            self._last_filters_snapshot = self._build_snapshot(
+                config_snapshot["excluded_folders"],
+                config_snapshot["excluded_files"],
+                config_snapshot["exclude_patterns"],
+                config_snapshot["image_extensions"],
+            )
+
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error("Error saving filter settings: %s", exc)
             self.show_error("Save Error", f"Failed to save settings: {exc}")
@@ -612,7 +626,24 @@ class FileFiltersWidget(QWidget):
 
     # ------------------------------------------------------------------
     def _handle_config_change(self) -> None:
-        self.load_settings()
+        if self._syncing_config:
+            return
+
+        try:
+            config = self.config_manager.get_active_profile_config()
+            exclusions = config.get("exclusions", {})
+            snapshot = self._snapshot_from_config(exclusions)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Failed to process configuration change for filters: %s", exc)
+            self.load_settings()
+            return
+
+        if snapshot != self._last_filters_snapshot:
+            self.load_settings(config)
+        else:
+            logger.debug(
+                "Ignoring configuration change without exclusion updates"
+            )
 
     def _on_destroyed(self, _obj=None) -> None:
         try:
@@ -711,6 +742,43 @@ class FileFiltersWidget(QWidget):
             }
             """
         )
+
+    # ------------------------------------------------------------------
+    def _build_snapshot(
+        self,
+        folders: Iterable[str],
+        files: Iterable[str],
+        patterns: Iterable[str],
+        image_extensions: Iterable[str],
+    ) -> Dict[str, Tuple[str, ...]]:
+        """Normalise exclusion values for change detection."""
+
+        def _sorted_unique(values: Iterable[str]) -> Tuple[str, ...]:
+            return tuple(sorted({str(value) for value in values}))
+
+        def _ordered(values: Iterable[str]) -> Tuple[str, ...]:
+            return tuple(str(value) for value in values)
+
+        return {
+            "folders": _sorted_unique(folders),
+            "files": _sorted_unique(files),
+            "patterns": _ordered(patterns),
+            "images": _sorted_unique(image_extensions),
+        }
+
+    # ------------------------------------------------------------------
+    def _snapshot_from_config(self, exclusions: Dict[str, Any]) -> Dict[str, Tuple[str, ...]]:
+        """Build a snapshot from the persisted configuration."""
+
+        folders = exclusions.get("folders", {}).get("exclude", [])
+        files = exclusions.get("files", {}).get("exclude", [])
+        patterns = exclusions.get("patterns", {}).get("exclude", [])
+        images = [
+            ext.lower()
+            for ext in exclusions.get("image_extensions", {}).get("include", [])
+            if isinstance(ext, str)
+        ]
+        return self._build_snapshot(folders, files, patterns, images)
 
     # ------------------------------------------------------------------
     def _on_filters_changed(self) -> None:
