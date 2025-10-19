@@ -62,3 +62,32 @@ def test_unified_manager_profile_lifecycle(
 
     unified_manager.remove_profile(profile_name)
     assert profile_name not in unified_manager.list_profiles()
+
+
+def test_batch_updates_reduce_notifications(
+    unified_manager: UnifiedConfigManager,
+) -> None:
+    events = 0
+
+    def listener() -> None:
+        nonlocal events
+        events += 1
+
+    unified_manager.add_change_listener(listener)
+
+    unified_manager.set_values_batch(
+        {
+            "analysis.include_summary": False,
+            "output.streaming": True,
+        }
+    )
+    assert events == 1
+
+    events = 0
+    unified_manager.set_values_batch(
+        {
+            "analysis.include_summary": False,
+            "output.streaming": True,
+        }
+    )
+    assert events == 0

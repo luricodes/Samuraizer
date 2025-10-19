@@ -249,33 +249,21 @@ class OutputOptionsWidget(QWidget):
 
             profile_kw = self._profile_storage_target()
             format_value = config_snapshot.get('format')
-            if format_value:
-                self.config_manager.set_value(
-                    "analysis.default_format",
-                    format_value,
-                    profile=profile_kw,
-                )
 
-            self.config_manager.set_value(
-                "analysis.include_summary",
-                bool(config_snapshot.get('include_summary', True)),
-                profile=profile_kw,
-            )
-            self.config_manager.set_value(
-                "output.streaming",
-                bool(config_snapshot.get('streaming', False)),
-                profile=profile_kw,
-            )
-            self.config_manager.set_value(
-                "output.pretty_print",
-                bool(config_snapshot.get('pretty_print', False)),
-                profile=profile_kw,
-            )
-            self.config_manager.set_value(
-                "output.compression",
-                bool(config_snapshot.get('use_compression', False)),
-                profile=profile_kw,
-            )
+            updates = {
+                "analysis.include_summary": bool(
+                    config_snapshot.get('include_summary', True)
+                ),
+                "output.streaming": bool(config_snapshot.get('streaming', False)),
+                "output.pretty_print": bool(config_snapshot.get('pretty_print', False)),
+                "output.compression": bool(
+                    config_snapshot.get('use_compression', False)
+                ),
+            }
+            if format_value:
+                updates["analysis.default_format"] = format_value
+
+            self.config_manager.set_values_batch(updates, profile=profile_kw)
 
             # Only save settings if auto-save is enabled
             auto_save = self.settings_manager.load_setting("settings/auto_save", False, type_=bool)

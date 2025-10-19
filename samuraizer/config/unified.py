@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, Iterable, List, Optional
@@ -55,6 +56,11 @@ class UnifiedConfigManager:
 
         self._load_or_create()
         self._initialized = True
+
+        self._batch_depth = 0
+        self._batch_dirty = False
+        self._batch_notify = False
+        self._batch_clear_profiles = False
 
     @property
     def config_path(self) -> Path:
@@ -206,6 +212,18 @@ class UnifiedConfigManager:
                 raise ConfigError(f"Configuration path '{path}' is not a table")
         return cursor
 
+    def _schedule_persist(self, notify: bool = True) -> None:
+        if self._batch_depth > 0:
+            self._batch_dirty = True
+            if notify:
+                self._batch_notify = True
+            self._batch_clear_profiles = True
+            return
+        self._write_config()
+        self._profile_cache.clear()
+        if notify:
+            self._notify_change()
+
     def update_list(
         self,
         path: str,
@@ -230,10 +248,10 @@ class UnifiedConfigManager:
                 merged = [value for value in current if value not in items]
             else:
                 raise ValueError(f"Unknown action '{action}'")
+            if merged == current:
+                return
             container[key] = merged
-            self._write_config()
-            self._profile_cache.clear()
-            self._notify_change()
+            self._schedule_persist()
 
     def set_value(self, path: str, value: Any, profile: Optional[str] = None) -> None:
         with self._lock:
@@ -249,15 +267,60 @@ class UnifiedConfigManager:
                     return
                 raise
             key = parts[-1]
+            current = container.get(key)
             if value is None:
                 if key not in container:
                     return
                 del container[key]
             else:
+                if current == value:
+                    return
                 container[key] = value
-            self._write_config()
-            self._profile_cache.clear()
-            self._notify_change()
+            self._schedule_persist()
+
+    def begin_batch_update(self) -> None:
+        with self._lock:
+            self._batch_depth += 1
+
+    def end_batch_update(self, notify: bool = True) -> None:
+        with self._lock:
+            if self._batch_depth == 0:
+                raise RuntimeError("end_batch_update called without matching begin_batch_update")
+            self._batch_depth -= 1
+            if self._batch_depth == 0:
+                try:
+                    if self._batch_dirty:
+                        self._write_config()
+                        if self._batch_clear_profiles:
+                            self._profile_cache.clear()
+                        if self._batch_notify and notify:
+                            self._notify_change()
+                    elif self._batch_notify and notify:
+                        self._notify_change()
+                finally:
+                    self._batch_dirty = False
+                    self._batch_notify = False
+                    self._batch_clear_profiles = False
+            else:
+                if not notify:
+                    self._batch_notify = False
+
+    @contextmanager
+    def batch_update(self, notify: bool = True):
+        self.begin_batch_update()
+        try:
+            yield
+        finally:
+            self.end_batch_update(notify=notify)
+
+    def set_values_batch(
+        self, updates: Dict[str, Any], profile: Optional[str] = None, notify: bool = True
+    ) -> None:
+        if not updates:
+            return
+        with self.batch_update(notify=notify):
+            for path, value in updates.items():
+                self.set_value(path, value, profile=profile)
 
     def reset_to_defaults(self) -> None:
         with self._lock:
