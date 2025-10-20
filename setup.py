@@ -16,14 +16,9 @@ install_requires = [
     "click>=8.1.7",
     "jsonschema>=4.19.0",
     "tomli>=2.0.1",
-    "xxhash>=3.5.0",
 
     # Git and GitHub integration
     "GitPython>=3.1.40",
-
-    # Platform-specific magic package
-    "python-magic-bin>=0.4.14; platform_system == 'Windows'",
-    "python-magic>=0.4.27; platform_system != 'Windows'",
 
     # GUI requirements - Qt6 ecosystem
     "PyQt6>=6.5.0",

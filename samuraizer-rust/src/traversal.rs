@@ -757,7 +757,8 @@ impl TraversalIterator {
             None => return Ok(None),
         };
 
-        match receiver.recv() {
+        let message = py.allow_threads(|| receiver.recv());
+        match message {
             Ok(TraversalMessage::Entries(entries)) => {
                 let list = PyList::empty(py);
                 for entry in &entries {

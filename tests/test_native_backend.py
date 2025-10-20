@@ -5,91 +5,64 @@ from typing import Any, Dict, List
 
 import pytest
 
-from samuraizer.backend.analysis import file_processor, hash_service
+from samuraizer.backend.analysis import hash_service
 from samuraizer.backend.analysis.traversal import traversal_processor
 from samuraizer.utils.file_utils import mime_detection
 
-try:
+try:  # pragma: no cover - the extension ships with the wheel
     from samuraizer import _native
-except ImportError:  # pragma: no cover - optional native module
+except ImportError:  # pragma: no cover - defensive guard for type checkers
     _native = None
 
 
 def _collect_chunks(generator: Any) -> List[Dict[str, Any]]:
-    return [chunk for chunk in generator]
+    return list(generator)
 
 
 @pytest.mark.skipif(_native is None, reason="Native module not available")
-def test_native_hash_matches_python(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_hash_service_round_trip(tmp_path: Path) -> None:
     file_path = tmp_path / "example.txt"
     file_path.write_text("hello world", encoding="utf-8")
 
-    monkeypatch.setattr(hash_service, "_native", None)
+    native_hash = _native.compute_hash(str(file_path))
     python_hash = hash_service.HashService.compute_file_hash(file_path)
 
-    native_hash = _native.compute_hash(str(file_path))
-
     assert native_hash == python_hash
+    assert isinstance(python_hash, str)
+    assert len(python_hash) == 16
 
 
 @pytest.mark.skipif(_native is None, reason="Native module not available")
-def test_native_text_preview_matches_python(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    file_path = tmp_path / "sample.txt"
-    content = "Sample content with café and unicode — preview"
-    file_path.write_text(content, encoding="utf-8")
+def test_text_and_binary_previews(tmp_path: Path) -> None:
+    text_path = tmp_path / "payload.txt"
+    text_path.write_text("Sample café text", encoding="utf-8")
 
-    preview_limit = 1024
+    binary_path = tmp_path / "payload.bin"
+    binary_path.write_bytes(b"\x89PNG" + b"\x00" * 32)
 
-    monkeypatch.setattr(file_processor, "_native", None)
-    python_preview = file_processor._read_text_file(file_path, preview_limit, None)
+    text_preview = _native.read_text_preview(str(text_path), 1024, None)
+    binary_preview = _native.read_binary_preview(str(binary_path), 64)
 
-    native_preview = _native.read_text_preview(str(file_path), preview_limit, None)
-
-    assert native_preview == python_preview
-
-
-@pytest.mark.skipif(_native is None, reason="Native module not available")
-def test_native_binary_preview_matches_python(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    binary_file = tmp_path / "image.bin"
-    binary_file.write_bytes(b"\x89PNG" + b"\x00" * 32)
-    large_binary = tmp_path / "huge.bin"
-    large_binary.write_bytes(b"\x00" * 4096)
-
-    preview_limit = 64
-
-    monkeypatch.setattr(file_processor, "_native", None)
-    python_preview = file_processor._read_binary_file(binary_file, preview_limit)
-    python_excluded = file_processor._read_binary_file(large_binary, preview_limit)
-
-    native_preview = _native.read_binary_preview(str(binary_file), preview_limit)
-    native_excluded = _native.read_binary_preview(str(large_binary), preview_limit)
-
-    assert native_preview == python_preview
-    assert native_excluded == python_excluded
+    assert text_preview["type"] == "text"
+    assert "café" in text_preview["content"]
+    assert binary_preview["type"] == "binary"
+    assert binary_preview["encoding"] == "base64"
 
 
 @pytest.mark.skipif(_native is None, reason="Native module not available")
-def test_native_binary_classifier_matches_python(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    text_file = tmp_path / "notes.txt"
-    text_file.write_text("plain text", encoding="utf-8")
+def test_mime_detection_delegates_to_native(tmp_path: Path) -> None:
+    text_file = tmp_path / "notes.md"
+    text_file.write_text("hello", encoding="utf-8")
+
     binary_file = tmp_path / "data.bin"
     binary_file.write_bytes(b"\x00\x01\x02")
 
-    monkeypatch.setattr(mime_detection, "_native", None)
-    python_text = mime_detection.is_binary(text_file)
-    python_binary = mime_detection.is_binary(binary_file)
-
-    native_text = _native.classify_binary(str(text_file))
-    native_binary = _native.classify_binary(str(binary_file))
-
-    assert python_text == bool(native_text)
-    assert python_binary == bool(native_binary)
+    assert mime_detection.is_binary(text_file) is False
+    assert mime_detection.is_binary(binary_file) is True
 
 
 @pytest.mark.skipif(_native is None, reason="Native module not available")
-def test_native_traversal_matches_python(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_traversal_pipeline(tmp_path: Path) -> None:
     (tmp_path / "nested").mkdir()
     (tmp_path / "nested" / "a.txt").write_text("alpha", encoding="utf-8")
     (tmp_path / "nested" / "b.log").write_text("beta", encoding="utf-8")
@@ -105,9 +78,9 @@ def test_native_traversal_matches_python(monkeypatch: pytest.MonkeyPatch, tmp_pa
         follow_symlinks=False,
         image_extensions={".png"},
         exclude_patterns=["*.log"],
-        threads=1,
+        threads=2,
         encoding="utf-8",
-        hashing_enabled=False,
+        hashing_enabled=True,
         progress_callback=None,
         chunk_callback=None,
         cancellation_token=None,
@@ -115,25 +88,25 @@ def test_native_traversal_matches_python(monkeypatch: pytest.MonkeyPatch, tmp_pa
         max_pending_tasks=None,
     )
 
-    monkeypatch.setattr(hash_service, "_native", None)
-    monkeypatch.setattr(file_processor, "_native", None)
-    monkeypatch.setattr(traversal_processor, "_native", None)
-    python_chunks = _collect_chunks(
-        traversal_processor._generate_directory_chunks_python(**options)
-    )
+    chunks = _collect_chunks(traversal_processor.generate_directory_chunks(**options))
 
-    monkeypatch.setattr(hash_service, "_native", _native)
-    monkeypatch.setattr(file_processor, "_native", _native)
-    monkeypatch.setattr(traversal_processor, "_native", _native)
-    native_chunks = _collect_chunks(
-        traversal_processor._generate_directory_chunks_native(**options)
-    )
+    entries = [chunk for chunk in chunks if "entries" in chunk]
+    summary = [chunk for chunk in chunks if "summary" in chunk][0]["summary"]
 
-    assert native_chunks == python_chunks
+    processed_files = sum(len(chunk["entries"]) for chunk in entries)
+
+    assert summary["included_files"] == processed_files
+    assert summary["hash_algorithm"] == "xxhash"
+
+    flattened = [item for chunk in entries for item in chunk["entries"]]
+    filenames = {entry["filename"] for entry in flattened}
+    assert "a.txt" in filenames
+    assert "keep.bin" in filenames
+    assert "b.log" not in filenames
 
 
 @pytest.mark.skipif(_native is None, reason="Native module not available")
-def test_native_traversal_honours_cancellation(tmp_path: Path) -> None:
+def test_traversal_honours_cancellation(tmp_path: Path) -> None:
     class DummyCancellation:
         def __init__(self, trigger_after: int) -> None:
             self.trigger_after = trigger_after
@@ -167,7 +140,7 @@ def test_native_traversal_honours_cancellation(tmp_path: Path) -> None:
         max_pending_tasks=None,
     )
 
-    chunks = _collect_chunks(traversal_processor._generate_directory_chunks_native(**options))
+    chunks = _collect_chunks(traversal_processor.generate_directory_chunks(**options))
 
     entry_chunks = [chunk for chunk in chunks if "entries" in chunk]
     summary = next(chunk["summary"] for chunk in chunks if "summary" in chunk)

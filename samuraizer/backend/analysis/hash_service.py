@@ -1,61 +1,32 @@
-# samuraizer/analysis/hash_service.py
+"""Thin Python shim around the Rust hashing backend."""
 
-import logging
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Optional
 
-import xxhash
-from colorama import Fore, Style
-
-try:
+try:  # pragma: no cover - the module is bundled with the wheel
     from samuraizer import _native
-except ImportError:  # pragma: no cover - optional native module
-    _native = None
+except ImportError as exc:  # pragma: no cover - defensive guard for type checkers
+    raise RuntimeError(
+        "The samuraizer native extension is not available. "
+        "Build it with `maturin develop` or install the wheel."
+    ) from exc
+
 
 class HashService:
-    """Service for computing fast file hashes for cache validation."""
-    
-    CHUNK_SIZE = 65536  # Optimal chunk size for reading
-    
+    """Service facade that delegates hashing to the Rust backend."""
+
     @staticmethod
     def compute_file_hash(file_path: Path) -> Optional[str]:
-        """
-        Calculates a fast hash of a file for cache validation purposes.
-        Uses xxHash for optimal performance.
+        """Return the xxHash64 digest for ``file_path`` using the native engine."""
 
-        Args:
-            file_path (Path): The path to the file
-
-        Returns:
-            Optional[str]: The file's hash as a hex string or None in case of errors
-        """
-        if not file_path.exists():
-            logging.warning(f"{Fore.YELLOW}File not found: {file_path}{Style.RESET_ALL}")
+        result = _native.compute_hash(str(file_path))
+        if result is None:
             return None
+        if not isinstance(result, str):  # pragma: no cover - native contract
+            raise TypeError("Native compute_hash returned an unexpected payload")
+        return result
 
-        if _native is not None:
-            try:
-                native_hash = _native.compute_hash(str(file_path))
-                if native_hash is not None:
-                    return native_hash
-            except Exception:
-                logging.exception("Native hash computation failed; falling back to Python")
 
-        try:
-            hasher = xxhash.xxh64()
-            with file_path.open('rb') as file:
-                for chunk in iter(lambda: file.read(HashService.CHUNK_SIZE), b""):
-                    hasher.update(chunk)
-            return hasher.hexdigest()
-
-        except PermissionError:
-            logging.warning(f"{Fore.YELLOW}No permission to read the file: {file_path}{Style.RESET_ALL}")
-        except OSError as e:
-            logging.warning(f"{Fore.YELLOW}OS error when reading the file {file_path}: {e}{Style.RESET_ALL}")
-        except Exception as e:
-            logging.error(f"{Fore.RED}Unexpected error computing hash for {file_path}: {e}{Style.RESET_ALL}")
-        
-        return None
-
-# Simple interface for backward compatibility if needed
 compute_file_hash = HashService.compute_file_hash

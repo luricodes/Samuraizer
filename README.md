@@ -51,9 +51,9 @@ Known caveat: there are a few minor bugs mentioned by maintainers; these are tra
   - Integrated GitHub repository browser
 
 - Analysis Capabilities
-  - File Type Detection (python-magic)
+  - File Type Detection (Rust heuristics)
   - Encoding Detection and Handling
-  - Size Analysis, Binary Detection, and Hash Computation (xxHash)
+  - Size Analysis, Binary Detection, and Hash Computation (Rust/xxHash)
   - Metadata Extraction and Content Analysis
   - Binary and Text Processing
   - Symlink Handling (configurable)
@@ -67,12 +67,11 @@ Known caveat: there are a few minor bugs mentioned by maintainers; these are tra
 
 ## 🧰 Tech Stack
 
-- Python 3.9+ (core logic, CLI, and scripting)
+- Python 3.9+ (CLI, orchestration, GUI)
+- Rust (PyO3 extension powering traversal, hashing, MIME detection)
 - PyQt6 (GUI)
 - SQLite (cache)
 - GraphViz (DOT output)
-- xxHash (fast hashing)
-- python-magic (file type detection)
 - NetworkX / PyVis (visualizations)
 - Colorama / tqdm (CLI UX)
 
@@ -260,7 +259,7 @@ Advanced Features
   - Real-time progress, plots, and configuration panels
 
 - Analysis Pipeline
-  - File type detection (python-magic)
+  - File type detection (Rust heuristics)
   - Encoding and binary handling
   - Metadata extraction and content analysis
   - Symlink handling and error reporting
@@ -322,7 +321,7 @@ This project is licensed under the GNU General Public License v3.0 (GPL-3.0). Se
 ## 🙏 Acknowledgments
 
 Samuraizer leverages a number of open-source libraries:
-- PyQt6, python-magic, charset-normalizer, xxhash, SQLite, GraphViz, NetworkX, PyVis, Colorama, tqdm
+- PyQt6, charset-normalizer, Rust/xxhash, SQLite, GraphViz, NetworkX, PyVis, Colorama, tqdm
 
 ## 📫 Contact
 
