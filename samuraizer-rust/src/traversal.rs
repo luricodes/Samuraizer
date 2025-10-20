@@ -4,13 +4,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
+use chrono::{DateTime, Local, NaiveDateTime, SecondsFormat, TimeZone, Utc};
+use chrono_tz::Tz;
 use crossbeam_channel::{bounded, Receiver, Sender};
 use globset::{Glob, GlobMatcher};
 use pyo3::types::{PyDict, PyList};
 use pyo3::{exceptions::PyValueError, prelude::*};
 use rayon::prelude::*;
 use regex::Regex;
-use serde_json::{json, Value};
+use serde_json::{json, Number, Value};
+use std::convert::TryFrom;
 use walkdir::WalkDir;
 
 use crate::content;
@@ -40,6 +43,7 @@ pub struct TraversalOptions {
     pub hashing_enabled: bool,
     pub chunk_size: usize,
     pub cancellation: Option<Py<PyAny>>,
+    pub timezone: TimezoneInfo,
 }
 
 #[derive(Clone)]
@@ -98,6 +102,15 @@ impl TraversalOptions {
             .map(|v| v.extract::<usize>())
             .transpose()?
             .unwrap_or(256);
+        let use_utc: bool = dict
+            .get_item("use_utc")?
+            .map(|v| v.extract::<bool>())
+            .transpose()?
+            .unwrap_or(false);
+        let timezone_name: Option<String> = dict
+            .get_item("timezone")?
+            .map(|v| v.extract::<String>())
+            .transpose()?;
 
         let image_extensions: HashSet<String> = dict
             .get_item("image_extensions")?
@@ -160,8 +173,70 @@ impl TraversalOptions {
             hashing_enabled,
             chunk_size: chunk_size.max(1),
             cancellation,
+            timezone: TimezoneInfo::new(use_utc, timezone_name),
         })
     }
+}
+
+#[derive(Clone)]
+pub struct TimezoneInfo {
+    use_utc: bool,
+    timezone: Option<Tz>,
+    label: String,
+}
+
+impl TimezoneInfo {
+    fn new(use_utc: bool, timezone_name: Option<String>) -> Self {
+        let timezone = timezone_name
+            .as_ref()
+            .and_then(|name| name.parse::<Tz>().ok());
+        let label = if use_utc {
+            "UTC".to_string()
+        } else if let Some(name) = timezone_name {
+            name
+        } else {
+            let now = Local::now();
+            let display = now.format("%Z").to_string();
+            if display.trim().is_empty() {
+                now.offset().to_string()
+            } else {
+                display
+            }
+        };
+        Self {
+            use_utc,
+            timezone,
+            label,
+        }
+    }
+
+    fn label(&self) -> &str {
+        &self.label
+    }
+
+    fn format_system_time(&self, time: std::time::SystemTime) -> Option<String> {
+        system_time_to_datetime(time).map(|dt| self.format_datetime(dt))
+    }
+
+    fn format_datetime(&self, datetime: DateTime<Utc>) -> String {
+        if self.use_utc {
+            datetime.to_rfc3339_opts(SecondsFormat::Millis, true)
+        } else if let Some(tz) = &self.timezone {
+            tz.from_utc_datetime(&datetime.naive_utc())
+                .to_rfc3339_opts(SecondsFormat::Millis, true)
+        } else {
+            DateTime::<Local>::from(datetime).to_rfc3339_opts(SecondsFormat::Millis, true)
+        }
+    }
+}
+
+fn system_time_to_datetime(time: std::time::SystemTime) -> Option<DateTime<Utc>> {
+    let duration = time.duration_since(std::time::UNIX_EPOCH).ok()?;
+    let secs = duration.as_secs();
+    let nanos = duration.subsec_nanos();
+    let secs_i64 = i64::try_from(secs).ok()?;
+    let naive = NaiveDateTime::from_timestamp_opt(secs_i64, nanos)?;
+    Some(DateTime::<Utc>::from_utc(naive, Utc))
 }
 
 fn matches_patterns(name: &str, patterns: &[PatternMatcher]) -> bool {
@@ -336,7 +411,15 @@ fn process_path(path: &Path, options: &TraversalOptions) -> Value {
         });
     }
 
-    let info = if binary {
+    #[cfg(unix)]
+    let mode_value = {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode()
+    };
+    #[cfg(not(unix))]
+    let mode_value = 0u32;
+
+    let mut info = if binary {
         match content::read_binary_preview(path, options.max_file_size as usize) {
             Ok(info) => info,
             Err(err) => json!({
@@ -362,6 +445,32 @@ fn process_path(path: &Path, options: &TraversalOptions) -> Value {
         }
     };
 
+    if let Value::Object(map) = &mut info {
+        map.insert("size".to_string(), Value::Number(Number::from(size)));
+        let permissions = format!("{:#o}", mode_value);
+        map.insert("permissions".to_string(), Value::String(permissions));
+        let modified_iso = metadata
+            .modified()
+            .ok()
+            .and_then(|ts| options.timezone.format_system_time(ts));
+        let created_iso = metadata
+            .created()
+            .ok()
+            .and_then(|ts| options.timezone.format_system_time(ts));
+        map.insert(
+            "modified".to_string(),
+            modified_iso.map(Value::String).unwrap_or(Value::Null),
+        );
+        map.insert(
+            "created".to_string(),
+            created_iso.map(Value::String).unwrap_or(Value::Null),
+        );
+        map.insert(
+            "timezone".to_string(),
+            Value::String(options.timezone.label().to_string()),
+        );
+    }
+
     let hash_value = if options.hashing_enabled {
         match hashing::compute_file_hash(path) {
             Ok(value) => value.map(Value::String).unwrap_or(Value::Null),
@@ -380,14 +489,6 @@ fn process_path(path: &Path, options: &TraversalOptions) -> Value {
     } else {
         Value::Null
     };
-
-    #[cfg(unix)]
-    let mode_value = {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.permissions().mode()
-    };
-    #[cfg(not(unix))]
-    let mode_value = 0u32;
 
     let modified = metadata
         .modified()

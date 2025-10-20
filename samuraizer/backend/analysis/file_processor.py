@@ -319,6 +319,9 @@ def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]
 
 def _add_metadata(file_info: Dict[str, Any], stat: os.stat_result) -> None:
     """Add metadata to file info with proper timezone handling."""
+    if "timezone" in file_info:
+        # Metadata already populated (likely by native backend)
+        return
     try:
         tz_service = TimezoneService()
         tz_state = tz_service.get_config()

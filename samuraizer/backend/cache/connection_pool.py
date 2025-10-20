@@ -710,6 +710,15 @@ async def get_connection_context_async() -> AsyncGenerator[Optional[sqlite3.Conn
     finally:
         await loop.run_in_executor(None, _connection_pool_instance._return_connection, conn)
 
+
+def get_cache_db_path() -> Optional[str]:
+    """Expose the active cache database path for native integrations."""
+
+    if _connection_pool_instance is None:
+        return None
+    return getattr(_connection_pool_instance, "db_path", None)
+
+
 def queue_write(entry: PendingWrite, synchronous: bool = False) -> None:
     """Queue a write operation to be processed in batch"""
     if _connection_pool_instance is not None:

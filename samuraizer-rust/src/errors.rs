@@ -9,6 +9,10 @@ pub enum NativeError {
     Encoding(String),
     #[error("Hashing error: {0}")]
     Hashing(String),
+    #[error("Database error: {0}")]
+    Database(String),
+    #[error("Serialization error: {0}")]
+    Serialization(String),
     #[error("Traversal aborted")]
     Cancelled,
     #[error("Unexpected error: {0}")]
@@ -18,5 +22,17 @@ pub enum NativeError {
 impl NativeError {
     pub fn to_pyerr(&self) -> PyErr {
         PyRuntimeError::new_err(self.to_string())
+    }
+}
+
+impl From<rusqlite::Error> for NativeError {
+    fn from(value: rusqlite::Error) -> Self {
+        NativeError::Database(value.to_string())
+    }
+}
+
+impl From<serde_json::Error> for NativeError {
+    fn from(value: serde_json::Error) -> Self {
+        NativeError::Serialization(value.to_string())
     }
 }

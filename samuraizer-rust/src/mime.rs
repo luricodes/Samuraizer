@@ -4,16 +4,26 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use infer;
+use lru::LruCache;
+use mime_guess::MimeGuess;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use serde::Serialize;
-
-use lru::LruCache;
 
 use crate::errors::NativeError;
 
 const HEURISTIC_SAMPLE_SIZE: usize = 8192;
 const SAFE_CONTROL: [u8; 4] = [9, 10, 12, 13];
+const TEXTUAL_MIME_PREFIXES: &[&str] = &[
+    "text/",
+    "application/json",
+    "application/xml",
+    "application/javascript",
+    "application/x-javascript",
+    "application/x-sh",
+];
+const TEXTUAL_MIME_TYPES: &[&str] = &["application/x-empty", "inode/x-empty"];
 
 static TEXTUAL_EXTENSIONS: Lazy<std::collections::HashSet<&'static str>> = Lazy::new(|| {
     [
@@ -106,6 +116,34 @@ fn classify_by_extension(path: &Path) -> Option<bool> {
     None
 }
 
+fn mime_implies_text(mime_type: &str) -> bool {
+    if TEXTUAL_MIME_TYPES.contains(&mime_type) {
+        return true;
+    }
+    TEXTUAL_MIME_PREFIXES
+        .iter()
+        .any(|prefix| mime_type.starts_with(prefix))
+}
+
+fn classify_mime_type(mime_type: &str) -> Option<bool> {
+    if mime_implies_text(mime_type) {
+        return Some(false);
+    }
+    if mime_type == "application/octet-stream" {
+        return None;
+    }
+    Some(true)
+}
+
+fn detect_with_infer(sample: &[u8]) -> Option<bool> {
+    infer::get(sample).and_then(|kind| classify_mime_type(kind.mime_type()))
+}
+
+fn detect_with_mime_guess(path: &Path) -> Option<bool> {
+    let guess = MimeGuess::from_path(path).first_raw()?;
+    classify_mime_type(guess)
+}
+
 fn read_file_sample(path: &Path, sample_size: usize) -> Result<Vec<u8>, NativeError> {
     let mut file = File::open(path)?;
     let mut buffer = vec![0u8; sample_size];
@@ -183,21 +221,7 @@ fn magic_detect(sample: &[u8]) -> Option<bool> {
         return None;
     }
     let mime = unsafe { cookie.buffer(sample) }.ok()?;
-    if mime.starts_with("text/")
-        || mime == "application/json"
-        || mime == "application/xml"
-        || mime == "application/javascript"
-        || mime == "application/x-javascript"
-        || mime == "application/x-sh"
-        || mime == "application/x-empty"
-        || mime == "inode/x-empty"
-    {
-        return Some(false);
-    }
-    if mime == "application/octet-stream" {
-        return None;
-    }
-    Some(true)
+    classify_mime_type(&mime)
 }
 
 #[cfg(not(feature = "libmagic"))]
@@ -235,6 +259,12 @@ fn classify_uncached(path: &Path) -> Result<bool, NativeError> {
 
     let sample = read_file_sample(path, HEURISTIC_SAMPLE_SIZE)?;
     if let Some(result) = analyse_sample(&sample) {
+        return Ok(result);
+    }
+    if let Some(result) = detect_with_infer(&sample) {
+        return Ok(result);
+    }
+    if let Some(result) = detect_with_mime_guess(path) {
         return Ok(result);
     }
     if let Some(result) = magic_detect(&sample) {

@@ -17,6 +17,7 @@ from ..file_processor import process_file, _add_metadata
 from ...services.event_service.cancellation import CancellationToken
 from samuraizer.backend.cache.cache_operations import set_cached_entry
 from samuraizer.backend.cache.connection_pool import get_connection_context, is_cache_disabled
+from samuraizer.config.timezone_service import TimezoneService
 
 try:
     from samuraizer import _native
@@ -310,6 +311,14 @@ def _generate_directory_chunks_native(
         "chunk_size": chunk_size,
     }
 
+    try:
+        tz_service = TimezoneService()
+        tz_config = tz_service.get_config()
+        options["use_utc"] = bool(tz_config.get("use_utc", False))
+        options["timezone"] = str(tz_service.get_timezone())
+    except Exception:  # pragma: no cover - timezone detection best-effort
+        logging.exception("Failed to resolve timezone configuration")
+
     if cancellation_token is not None:
         options["cancellation"] = cancellation_token
 
@@ -354,7 +363,8 @@ def _generate_directory_chunks_native(
                             "exception_message": str(exc),
                         }
                     else:
-                        _add_metadata(info, stat_result)
+                        if _native is None:
+                            _add_metadata(info, stat_result)
                         if hashing_enabled and not is_cache_disabled():
                             hash_value = raw_entry.get("hash")
                             if isinstance(hash_value, str):

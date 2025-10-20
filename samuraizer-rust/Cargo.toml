@@ -30,6 +30,11 @@ lru = "0.12"
 crossbeam-channel = "0.5"
 thiserror = "1"
 log = "0.4"
+infer = "0.9"
+mime_guess = "2"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.8"
+rusqlite = { version = "0.31", features = ["bundled", "chrono"] }
 
 [dependencies.magic]
 version = "0.16"
