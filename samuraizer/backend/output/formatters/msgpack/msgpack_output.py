@@ -190,6 +190,68 @@ class MessagePackDecoder:
         except (TypeError, msgpack.UnpackException) as e:
             raise MessagePackError(f"Stream deserialization failed: {e}")
 
+@dataclass
+class _PayloadValidationResult:
+    """Outcome of validating the decoded MessagePack payload."""
+
+    is_valid: bool
+    reason: Optional[str] = None
+
+    def log_failure(self) -> None:
+        if not self.is_valid and self.reason:
+            logging.debug("MessagePack validation failed: %s", self.reason)
+
+
+def _validate_msgpack_entry(entry: Any, context: str) -> _PayloadValidationResult:
+    """Validate a single MessagePack entry produced by ``decode_stream``."""
+
+    if isinstance(entry, dict):
+        if not entry:
+            return _PayloadValidationResult(False, f"mapping entry at {context} is empty")
+
+        non_string_keys = [type(key).__name__ for key in entry.keys() if not isinstance(key, str)]
+        if non_string_keys:
+            return _PayloadValidationResult(
+                False,
+                (
+                    f"mapping entry at {context} contains non-string keys: "
+                    f"{sorted(set(non_string_keys))}"
+                ),
+            )
+
+        return _PayloadValidationResult(True)
+
+    if isinstance(entry, list):
+        if not entry:
+            return _PayloadValidationResult(False, f"list entry at {context} is empty")
+
+        for nested_index, nested in enumerate(entry):
+            nested_context = f"{context}[{nested_index}]"
+            nested_result = _validate_msgpack_entry(nested, nested_context)
+            if not nested_result.is_valid:
+                return nested_result
+
+        return _PayloadValidationResult(True)
+
+    return _PayloadValidationResult(
+        False,
+        f"entry at {context} has unsupported type {type(entry).__name__}",
+    )
+
+
+def _validate_msgpack_payload(decoded_objects: List[Any]) -> _PayloadValidationResult:
+    """Ensure decoded MessagePack payload matches expected structure."""
+
+    if not decoded_objects:
+        return _PayloadValidationResult(False, "decoded payload is empty")
+
+    for index, entry in enumerate(decoded_objects):
+        result = _validate_msgpack_entry(entry, f"index {index}")
+        if not result.is_valid:
+            return result
+
+    return _PayloadValidationResult(True)
+
 class MessagePackStreamWriter:
     """Context manager for streaming MessagePack data."""
     
@@ -249,36 +311,60 @@ class MessagePackStreamWriter:
 def validate_msgpack_file(file_path: str, config: Optional[Dict[str, Any]] = None) -> bool:
     """Validate a MessagePack file by attempting to decode it."""
     try:
-        file_size = Path(file_path).stat().st_size
-        with open(file_path, 'rb') as f:
-            # Create decoder with the same configuration used for writing
-            msgpack_config = MessagePackConfig.from_dict(config)
-            decoder = MessagePackDecoder(msgpack_config)
-            data = decoder.decode_stream(f.read())
-            
-            # Log validation details at debug level
-            logging.debug(f"{Fore.GREEN}MessagePack validation details:{Style.RESET_ALL}")
-            logging.debug(f"  - File: {file_path}")
-            logging.debug(f"  - Size: {file_size:,} bytes")
-            logging.debug(f"  - Compression: {'Enabled' if msgpack_config.use_compression else 'Disabled'}")
-            
-            if isinstance(data, list):
-                logging.debug(f"  - Structure: Stream with {len(data)} entries")
-                if data:
-                    logging.debug(f"  - First entry type: {type(data[0]).__name__}")
-            else:
-                logging.debug(f"  - Structure: {type(data).__name__}")
-            
-            logging.debug(f"  - Format: Valid MessagePack")
-            logging.debug(f"  - Integrity: Data successfully decoded")
-            
-            # Log success at info level
-            logging.info(f"{Fore.GREEN}MessagePack validation successful{Style.RESET_ALL}")
-            
+        file_path_obj = Path(file_path)
+        file_size = file_path_obj.stat().st_size
+
+        if file_size == 0:
+            logging.error(f"{Fore.RED}MessagePack validation failed: file is empty{Style.RESET_ALL}")
+            return False
+
+        msgpack_config = MessagePackConfig.from_dict(config)
+
+        with file_path_obj.open('rb') as f:
+            raw_bytes = f.read()
+
+        if not raw_bytes:
+            logging.error(f"{Fore.RED}MessagePack validation failed: file contains no data{Style.RESET_ALL}")
+            return False
+
+        if len(raw_bytes) != file_size:
+            logging.error(
+                f"{Fore.RED}MessagePack validation failed: expected {file_size} bytes but read {len(raw_bytes)}{Style.RESET_ALL}"
+            )
+            return False
+
+        decoder = MessagePackDecoder(msgpack_config)
+        decoded_objects = decoder.decode_stream(raw_bytes)
+
+        payload_validation = _validate_msgpack_payload(decoded_objects)
+        if not payload_validation.is_valid:
+            payload_validation.log_failure()
+            reason_suffix = (
+                f" ({payload_validation.reason})" if payload_validation.reason else ""
+            )
+            logging.error(
+                f"{Fore.RED}MessagePack validation failed: decoded payload has unexpected structure{reason_suffix}{Style.RESET_ALL}"
+            )
+            return False
+
+        logging.debug(f"{Fore.GREEN}MessagePack validation details:{Style.RESET_ALL}")
+        logging.debug(f"  - File: {file_path}")
+        logging.debug(f"  - Size: {file_size:,} bytes")
+        logging.debug(
+            f"  - Compression: {'Enabled' if msgpack_config.use_compression else 'Disabled'}"
+        )
+        logging.debug(f"  - Structure: Stream with {len(decoded_objects)} entries")
+        if decoded_objects:
+            logging.debug(f"  - First entry type: {type(decoded_objects[0]).__name__}")
+        logging.debug(f"  - Format: Valid MessagePack")
+        logging.debug(f"  - Integrity: Data successfully decoded")
+
+        logging.info(f"{Fore.GREEN}MessagePack validation successful{Style.RESET_ALL}")
         return True
     except (IOError, MessagePackError) as e:
         logging.error(f"{Fore.RED}MessagePack validation failed: {e}{Style.RESET_ALL}")
         return False
+
 
 def output_to_msgpack(
     data: Dict[str, Any],
