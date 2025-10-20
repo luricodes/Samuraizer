@@ -1,5 +1,3 @@
-# samuraizer/main.py
-
 from samuraizer.core.application import run as cli_run
 from samuraizer.gui.main import main as gui_main
 import sys
