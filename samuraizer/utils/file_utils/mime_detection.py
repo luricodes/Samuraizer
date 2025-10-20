@@ -9,11 +9,8 @@ from typing import Optional, Tuple
 
 try:  # pragma: no cover - ships with the wheel
     from samuraizer import _native
-except ImportError as exc:  # pragma: no cover - defensive guard for type checkers
-    raise RuntimeError(
-        "The samuraizer native extension is required. "
-        "Build it with `maturin develop` or install the wheel."
-    ) from exc
+except ImportError:  # pragma: no cover - allow running without the native extension
+    _native = None
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +36,28 @@ def _classify_cached(path_str: str, size: int, mtime_ns: int) -> bool:
 
 
 def _classify_uncached(path_str: str) -> bool:
+    if _native is not None:
+        try:
+            result = _native.classify_binary(path_str)
+        except Exception as exc:  # pragma: no cover - native errors surface rarely
+            raise RuntimeError(f"Failed to classify {path_str}: {exc}") from exc
+        return bool(result)
+
     try:
-        result = _native.classify_binary(path_str)
-    except Exception as exc:  # pragma: no cover - native errors surface rarely
-        raise RuntimeError(f"Failed to classify {path_str}: {exc}") from exc
-    return bool(result)
+        with Path(path_str).open("rb") as handle:
+            sample = handle.read(4096)
+    except OSError as exc:
+        logger.warning("Failed to open %s for binary detection: %s", path_str, exc)
+        return True
+
+    if not sample:
+        return False
+
+    if b"\x00" in sample:
+        return True
+
+    text_threshold = sum(1 for byte in sample if 32 <= byte <= 126 or byte in (9, 10, 13))
+    return (text_threshold / len(sample)) < 0.7
 
 
 def is_binary(file_path: Path) -> bool:
