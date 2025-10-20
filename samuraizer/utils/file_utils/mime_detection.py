@@ -19,6 +19,11 @@ from .file_helpers import (
     read_file_sample,
 )
 
+try:
+    from samuraizer import _native
+except ImportError:  # pragma: no cover - optional native module
+    _native = None
+
 logger = logging.getLogger(__name__)
 
 thread_local_data = threading.local()
@@ -112,6 +117,12 @@ def _is_binary_cached(path_str: str, size: int, mtime_ns: int) -> bool:
 
 
 def _is_binary_uncached(file_path: Path) -> bool:
+    if _native is not None:
+        try:
+            return bool(_native.classify_binary(str(file_path)))
+        except Exception:
+            logger.exception("Native binary classifier failed; falling back to Python heuristics")
+
     extension_decision = classify_by_extension(file_path)
     if extension_decision is not None:
         return extension_decision

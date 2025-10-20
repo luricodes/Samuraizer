@@ -1,10 +1,16 @@
 # samuraizer/analysis/hash_service.py
 
 import logging
-import xxhash
 from pathlib import Path
 from typing import Optional
+
+import xxhash
 from colorama import Fore, Style
+
+try:
+    from samuraizer import _native
+except ImportError:  # pragma: no cover - optional native module
+    _native = None
 
 class HashService:
     """Service for computing fast file hashes for cache validation."""
@@ -26,6 +32,14 @@ class HashService:
         if not file_path.exists():
             logging.warning(f"{Fore.YELLOW}File not found: {file_path}{Style.RESET_ALL}")
             return None
+
+        if _native is not None:
+            try:
+                native_hash = _native.compute_hash(str(file_path))
+                if native_hash is not None:
+                    return native_hash
+            except Exception:
+                logging.exception("Native hash computation failed; falling back to Python")
 
         try:
             hasher = xxhash.xxh64()

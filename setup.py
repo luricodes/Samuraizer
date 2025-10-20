@@ -1,4 +1,5 @@
 from setuptools import setup, find_packages
+from setuptools_rust import Binding, RustExtension
 
 # All dependencies - matches requirements.txt exactly
 install_requires = [
@@ -73,6 +74,14 @@ setup(
             "samuraizer_gui=samuraizer.gui.main:main"
         ],
     },
+    rust_extensions=[
+        RustExtension(
+            "samuraizer._native",
+            path="samuraizer-rust/Cargo.toml",
+            binding=Binding.PyO3,
+        )
+    ],
+    zip_safe=False,
     classifiers=[
         "Development Status :: 4 - Beta",
         "Programming Language :: Python :: 3.9",

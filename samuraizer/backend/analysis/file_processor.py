@@ -16,6 +16,11 @@ from ...config.timezone_service import TimezoneService
 
 import charset_normalizer
 
+try:
+    from samuraizer import _native
+except ImportError:  # pragma: no cover - optional native module
+    _native = None
+
 _STREAM_READ_CHUNK_SIZE = 256 * 1024  # 256 KiB keeps memory usage low while remaining efficient
 _MAX_BINARY_CONTENT_BYTES = 3 * 1024 * 1024  # 3 MiB preview for binary files
 _MAX_TEXT_CONTENT_BYTES = 5 * 1024 * 1024  # 5 MiB preview for text files
@@ -192,6 +197,15 @@ def _process_file_content(
 def _read_binary_file(file_path: Path, max_file_size: int) -> Dict[str, Any]:
     """Read binary file content without exhausting memory."""
 
+    if _native is not None:
+        try:
+            preview_limit = min(max_file_size, _MAX_BINARY_CONTENT_BYTES)
+            result = _native.read_binary_preview(str(file_path), preview_limit)
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            logger.exception("Native binary preview failed; falling back to Python implementation")
+
     try:
         file_size = file_path.stat().st_size
         if file_size > max_file_size:
@@ -237,6 +251,15 @@ def _read_binary_file(file_path: Path, max_file_size: int) -> Dict[str, Any]:
         }
 
 def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]) -> Dict[str, Any]:
+    if _native is not None:
+        try:
+            preview_limit = min(max_file_size, _MAX_TEXT_CONTENT_BYTES)
+            result = _native.read_text_preview(str(file_path), preview_limit, encoding)
+            if isinstance(result, dict):
+                return result
+        except Exception:
+            logger.exception("Native text preview failed; falling back to Python implementation")
+
     try:
         read_limit = min(max_file_size, _MAX_TEXT_CONTENT_BYTES)
 

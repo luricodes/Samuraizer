@@ -13,8 +13,15 @@ import sys
 import io
 
 from .traversal_core import traverse_and_collect
-from ..file_processor import process_file
+from ..file_processor import process_file, _add_metadata
 from ...services.event_service.cancellation import CancellationToken
+from samuraizer.backend.cache.cache_operations import set_cached_entry
+from samuraizer.backend.cache.connection_pool import get_connection_context, is_cache_disabled
+
+try:
+    from samuraizer import _native
+except ImportError:  # pragma: no cover - optional native module
+    _native = None
 
 _DEFAULT_CHUNK_SIZE = 256
 _DEFAULT_PENDING_MULTIPLIER = 4
@@ -77,7 +84,7 @@ def get_directory_structure(
     return dir_structure, summary
 
 
-def generate_directory_chunks(
+def _generate_directory_chunks_python(
     *,
     root_dir: Path,
     max_file_size: int,
@@ -91,6 +98,7 @@ def generate_directory_chunks(
     encoding: str,
     hashing_enabled: bool,
     progress_callback: Optional[Callable[[int], None]],
+    chunk_callback: Optional[Callable[[List[Dict[str, Any]]], None]],
     cancellation_token: Optional[CancellationToken],
     chunk_size: int,
     max_pending_tasks: Optional[int],
@@ -266,6 +274,183 @@ def generate_directory_chunks(
     )
 
     yield {"summary": summary}
+
+
+def _generate_directory_chunks_native(
+    *,
+    root_dir: Path,
+    max_file_size: int,
+    include_binary: bool,
+    excluded_folders: Set[str],
+    excluded_files: Set[str],
+    follow_symlinks: bool,
+    image_extensions: Set[str],
+    exclude_patterns: List[str],
+    threads: int,
+    encoding: str,
+    hashing_enabled: bool,
+    progress_callback: Optional[Callable[[int], None]],
+    chunk_callback: Optional[Callable[[List[Dict[str, Any]]], None]],
+    cancellation_token: Optional[CancellationToken],
+    chunk_size: int,
+) -> Iterator[Dict[str, Any]]:
+    options = {
+        "root": str(root_dir),
+        "max_file_size": max_file_size,
+        "include_binary": include_binary,
+        "excluded_folders": sorted(excluded_folders),
+        "excluded_files": sorted(excluded_files),
+        "follow_symlinks": follow_symlinks,
+        "image_extensions": sorted(image_extensions),
+        "exclude_patterns": list(exclude_patterns),
+        "threads": threads,
+        "encoding": encoding,
+        "hashing_enabled": hashing_enabled,
+        "chunk_size": chunk_size,
+    }
+
+    if cancellation_token is not None:
+        options["cancellation"] = cancellation_token
+
+    generator = _native.traverse_and_process(options)
+    processed_count = 0
+
+    for payload in generator:
+        if not isinstance(payload, dict):
+            continue
+
+        if "entries" in payload:
+            raw_entries = payload["entries"]
+            processed_entries: List[Dict[str, Any]] = []
+            if not isinstance(raw_entries, list):
+                continue
+
+            for raw_entry in raw_entries:
+                if not isinstance(raw_entry, dict):
+                    continue
+
+                parent = str(raw_entry.get("parent", "") or "")
+                filename = raw_entry.get("filename")
+                info = raw_entry.get("info") or {}
+
+                if not filename:
+                    continue
+
+                if not isinstance(info, dict):
+                    info = {"type": "error", "content": "Invalid info payload"}
+
+                file_path = (root_dir / Path(parent) / filename) if parent else root_dir / filename
+
+                if info.get("type") not in {"error", "excluded"}:
+                    try:
+                        stat_result = file_path.stat()
+                    except OSError as exc:
+                        logging.error("Failed to stat %s: %s", file_path, exc)
+                        info = {
+                            "type": "error",
+                            "content": f"Failed to stat file: {exc}",
+                            "exception_type": type(exc).__name__,
+                            "exception_message": str(exc),
+                        }
+                    else:
+                        _add_metadata(info, stat_result)
+                        if hashing_enabled and not is_cache_disabled():
+                            hash_value = raw_entry.get("hash")
+                            if isinstance(hash_value, str):
+                                with get_connection_context() as conn:
+                                    if conn is not None:
+                                        try:
+                                            set_cached_entry(
+                                                conn,
+                                                str(file_path.resolve()),
+                                                hash_value,
+                                                info,
+                                                stat_result.st_size,
+                                                stat_result.st_mtime,
+                                            )
+                                        except Exception:
+                                            logging.exception("Failed to update cache for %s", file_path)
+
+                processed_entries.append({
+                    "parent": parent,
+                    "filename": filename,
+                    "info": info,
+                })
+
+                processed_count += 1
+                if progress_callback:
+                    try:
+                        progress_callback(processed_count)
+                    except Exception:
+                        logging.exception("Progress callback failed")
+
+            if processed_entries:
+                yield {"entries": processed_entries}
+        elif "summary" in payload:
+            summary = payload["summary"]
+            if isinstance(summary, dict):
+                yield {"summary": summary}
+
+def generate_directory_chunks(
+    *,
+    root_dir: Path,
+    max_file_size: int,
+    include_binary: bool,
+    excluded_folders: Set[str],
+    excluded_files: Set[str],
+    follow_symlinks: bool,
+    image_extensions: Set[str],
+    exclude_patterns: List[str],
+    threads: int,
+    encoding: str,
+    hashing_enabled: bool,
+    progress_callback: Optional[Callable[[int], None]],
+    chunk_callback: Optional[Callable[[List[Dict[str, Any]]], None]],
+    cancellation_token: Optional[CancellationToken],
+    chunk_size: int,
+    max_pending_tasks: Optional[int],
+) -> Iterator[Dict[str, Any]]:
+    if _native is not None:
+        try:
+            yield from _generate_directory_chunks_native(
+                root_dir=root_dir,
+                max_file_size=max_file_size,
+                include_binary=include_binary,
+                excluded_folders=excluded_folders,
+                excluded_files=excluded_files,
+                follow_symlinks=follow_symlinks,
+                image_extensions=image_extensions,
+                exclude_patterns=exclude_patterns,
+                threads=threads,
+                encoding=encoding,
+                hashing_enabled=hashing_enabled,
+                progress_callback=progress_callback,
+                chunk_callback=chunk_callback,
+                cancellation_token=cancellation_token,
+                chunk_size=chunk_size,
+            )
+            return
+        except Exception:
+            logging.exception("Native traversal failed; falling back to Python implementation")
+
+    yield from _generate_directory_chunks_python(
+        root_dir=root_dir,
+        max_file_size=max_file_size,
+        include_binary=include_binary,
+        excluded_folders=excluded_folders,
+        excluded_files=excluded_files,
+        follow_symlinks=follow_symlinks,
+        image_extensions=image_extensions,
+        exclude_patterns=exclude_patterns,
+        threads=threads,
+        encoding=encoding,
+        hashing_enabled=hashing_enabled,
+        progress_callback=progress_callback,
+        chunk_callback=chunk_callback,
+        cancellation_token=cancellation_token,
+        chunk_size=chunk_size,
+        max_pending_tasks=max_pending_tasks,
+    )
 
 
 def _normalize_parent(root_dir: Path, file_path: Path) -> str:

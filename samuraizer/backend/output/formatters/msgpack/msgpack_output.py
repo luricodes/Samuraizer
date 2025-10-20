@@ -250,28 +250,43 @@ def validate_msgpack_file(file_path: str, config: Optional[Dict[str, Any]] = Non
     """Validate a MessagePack file by attempting to decode it."""
     try:
         file_size = Path(file_path).stat().st_size
+        if file_size == 0:
+            logging.error(f"{Fore.RED}MessagePack validation failed: file is empty{Style.RESET_ALL}")
+            return False
+
         with open(file_path, 'rb') as f:
             # Create decoder with the same configuration used for writing
             msgpack_config = MessagePackConfig.from_dict(config)
             decoder = MessagePackDecoder(msgpack_config)
             data = decoder.decode_stream(f.read())
-            
+
             # Log validation details at debug level
             logging.debug(f"{Fore.GREEN}MessagePack validation details:{Style.RESET_ALL}")
             logging.debug(f"  - File: {file_path}")
             logging.debug(f"  - Size: {file_size:,} bytes")
             logging.debug(f"  - Compression: {'Enabled' if msgpack_config.use_compression else 'Disabled'}")
             
+            is_valid_structure = False
             if isinstance(data, list):
                 logging.debug(f"  - Structure: Stream with {len(data)} entries")
                 if data:
                     logging.debug(f"  - First entry type: {type(data[0]).__name__}")
+                    is_valid_structure = all(isinstance(item, dict) for item in data)
+                else:
+                    logging.debug("  - Empty stream detected")
+            elif isinstance(data, dict):
+                logging.debug("  - Structure: Single mapping entry")
+                is_valid_structure = True
             else:
                 logging.debug(f"  - Structure: {type(data).__name__}")
-            
+
+            if not is_valid_structure:
+                logging.error(f"{Fore.RED}MessagePack validation failed: unexpected structure{Style.RESET_ALL}")
+                return False
+
             logging.debug(f"  - Format: Valid MessagePack")
             logging.debug(f"  - Integrity: Data successfully decoded")
-            
+
             # Log success at info level
             logging.info(f"{Fore.GREEN}MessagePack validation successful{Style.RESET_ALL}")
             
