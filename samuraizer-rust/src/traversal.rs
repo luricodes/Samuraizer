@@ -1,5 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
 
@@ -188,7 +189,14 @@ fn path_cancellation_requested(token: &Py<PyAny>) -> PyResult<bool> {
     })
 }
 
-fn gather_files(options: &TraversalOptions) -> PyResult<(Vec<PathBuf>, usize, usize, bool)> {
+struct GatherResult {
+    files: Vec<PathBuf>,
+    included: usize,
+    excluded: usize,
+    cancelled: bool,
+}
+
+fn gather_files(options: &TraversalOptions) -> PyResult<GatherResult> {
     let mut included = 0usize;
     let mut excluded = 0usize;
     let mut cancelled = false;
@@ -241,7 +249,20 @@ fn gather_files(options: &TraversalOptions) -> PyResult<(Vec<PathBuf>, usize, us
         files.push(entry.into_path());
     }
 
-    Ok((files, included, excluded, cancelled))
+    Ok(GatherResult {
+        files,
+        included,
+        excluded,
+        cancelled,
+    })
+}
+
+fn check_cancellation(options: &TraversalOptions) -> Result<bool, NativeError> {
+    if let Some(token) = &options.cancellation {
+        path_cancellation_requested(token).map_err(|err| NativeError::Other(err.to_string()))
+    } else {
+        Ok(false)
+    }
 }
 
 fn process_path(path: &Path, options: &TraversalOptions) -> Value {
@@ -417,7 +438,9 @@ pub fn run_traversal(py: Python<'_>, options: &TraversalOptions) -> PyResult<Tra
             .spawn(move || {
                 let error_sender = worker_sender.clone();
                 if let Err(err) = traversal_worker(options_for_worker, worker_sender) {
-                    let _ = error_sender.send(TraversalMessage::Error(err));
+                    if !matches!(err, NativeError::Cancelled) {
+                        let _ = error_sender.send(TraversalMessage::Error(err));
+                    }
                 }
             })
             .map(|_| ())
@@ -434,16 +457,19 @@ fn traversal_worker(
     options: TraversalOptions,
     sender: Sender<TraversalMessage>,
 ) -> Result<(), NativeError> {
-    let (files, included, excluded, cancelled) =
-        gather_files(&options).map_err(|err| NativeError::Other(err.to_string()))?;
+    let gather = gather_files(&options).map_err(|err| NativeError::Other(err.to_string()))?;
+    let cancellation_flag = Arc::new(AtomicBool::new(gather.cancelled));
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(options.threads)
         .build()
         .map_err(|err| NativeError::Other(err.to_string()))?;
 
-    let (entry_tx, entry_rx) = bounded::<Value>(options.threads.max(1) * 4);
+    let (entry_tx, entry_rx) = bounded::<(usize, Value)>(options.threads.max(1) * 4);
     let aggregate_options = options.clone();
     let aggregate_sender = sender.clone();
+    let aggregate_cancel = cancellation_flag.clone();
+    let included = gather.included;
+    let excluded = gather.excluded;
 
     let aggregator_handle = thread::spawn(move || {
         aggregate_entries(
@@ -452,118 +478,149 @@ fn traversal_worker(
             aggregate_options,
             included,
             excluded,
-            cancelled,
+            aggregate_cancel,
         )
     });
 
     let process_options = options.clone();
+    let process_cancel = cancellation_flag.clone();
+    let files = gather.files;
 
     let processing_result = pool.install(|| {
-        files.par_iter().try_for_each(|path| {
-            let entry = process_path(path, &process_options);
-            entry_tx.send(entry).map_err(|_| NativeError::Cancelled)
-        })
+        files.into_par_iter().enumerate().try_for_each_with(
+            entry_tx.clone(),
+            |tx, (index, path)| {
+                if process_cancel.load(Ordering::Relaxed) {
+                    return Err(NativeError::Cancelled);
+                }
+                if check_cancellation(&process_options)? {
+                    process_cancel.store(true, Ordering::Relaxed);
+                    return Err(NativeError::Cancelled);
+                }
+
+                let entry = process_path(&path, &process_options);
+                if tx.send((index, entry)).is_err() {
+                    process_cancel.store(true, Ordering::Relaxed);
+                    return Err(NativeError::Cancelled);
+                }
+                Ok(())
+            },
+        )
     });
     drop(entry_tx);
 
-    if let Err(err) = processing_result {
-        // wait for aggregator to drain existing entries before returning
-        let _ = aggregator_handle.join();
-        return Err(err);
-    }
+    let worker_result = match processing_result {
+        Ok(_) => Ok(()),
+        Err(NativeError::Cancelled) => Ok(()),
+        Err(err) => Err(err),
+    };
 
-    match aggregator_handle.join() {
-        Ok(result) => result?,
-        Err(_) => {
-            return Err(NativeError::Other(
-                "Traversal aggregator panicked".to_string(),
-            ))
-        }
-    }
+    let aggregator_result = match aggregator_handle.join() {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(NativeError::Cancelled)) => Ok(()),
+        Ok(Err(err)) => Err(err),
+        Err(_) => Err(NativeError::Other(
+            "Traversal aggregator panicked".to_string(),
+        )),
+    };
+
+    worker_result?;
+    aggregator_result?;
 
     Ok(())
 }
 
 fn aggregate_entries(
-    entry_rx: Receiver<Value>,
+    entry_rx: Receiver<(usize, Value)>,
     sender: Sender<TraversalMessage>,
     options: TraversalOptions,
     included: usize,
     excluded: usize,
-    cancelled: bool,
+    cancellation_flag: Arc<AtomicBool>,
 ) -> Result<(), NativeError> {
     let mut chunk = Vec::with_capacity(options.chunk_size);
     let mut processed = 0usize;
-    let mut excluded_files = excluded;
-    let mut included_files = 0usize;
+    let mut pending: BTreeMap<usize, Value> = BTreeMap::new();
     let mut failed_files = Vec::new();
+    let mut next_index = 0usize;
 
-    for entry in entry_rx.iter() {
+    for (index, entry) in entry_rx.iter() {
         processed += 1;
-        if let Some(info) = entry.get("info") {
+
+        if let Some(info) = entry.get("info").and_then(|i| i.as_object()) {
             if let Some(info_type) = info.get("type").and_then(|t| t.as_str()) {
-                match info_type {
-                    "excluded" => {
-                        excluded_files += 1;
-                    }
-                    "error" => {
-                        if let Some(filename) = entry.get("filename").and_then(|f| f.as_str()) {
-                            let file_path = options.root.join(
-                                entry
-                                    .get("parent")
-                                    .and_then(|p| p.as_str())
-                                    .filter(|s| !s.is_empty())
-                                    .map(|parent| Path::new(parent).join(filename))
-                                    .unwrap_or_else(|| PathBuf::from(filename)),
-                            );
-                            let error = info
-                                .get("content")
-                                .and_then(|c| c.as_str())
-                                .unwrap_or("Unknown error")
-                                .to_string();
-                            failed_files.push(json!({
-                                "file": file_path.to_string_lossy(),
-                                "error": error,
-                            }));
-                        }
-                    }
-                    _ => {
-                        included_files += 1;
+                if info_type == "error" {
+                    if let Some(filename) = entry.get("filename").and_then(|f| f.as_str()) {
+                        let file_path = options.root.join(
+                            entry
+                                .get("parent")
+                                .and_then(|p| p.as_str())
+                                .filter(|s| !s.is_empty())
+                                .map(|parent| Path::new(parent).join(filename))
+                                .unwrap_or_else(|| PathBuf::from(filename)),
+                        );
+                        let error = info
+                            .get("content")
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("Unknown error")
+                            .to_string();
+                        failed_files.push(json!({
+                            "file": file_path.to_string_lossy(),
+                            "error": error,
+                        }));
                     }
                 }
             }
         }
 
+        pending.insert(index, entry);
+
+        while let Some(next_entry) = pending.remove(&next_index) {
+            chunk.push(next_entry);
+            next_index += 1;
+
+            if chunk.len() >= options.chunk_size {
+                let to_send = std::mem::take(&mut chunk);
+                if sender.send(TraversalMessage::Entries(to_send)).is_err() {
+                    cancellation_flag.store(true, Ordering::Relaxed);
+                    return Err(NativeError::Cancelled);
+                }
+            }
+        }
+    }
+
+    for (_idx, entry) in pending.into_iter() {
         chunk.push(entry);
         if chunk.len() >= options.chunk_size {
             let to_send = std::mem::take(&mut chunk);
             if sender.send(TraversalMessage::Entries(to_send)).is_err() {
+                cancellation_flag.store(true, Ordering::Relaxed);
                 return Err(NativeError::Cancelled);
             }
-            chunk = Vec::with_capacity(options.chunk_size);
         }
     }
 
     if !chunk.is_empty() {
         if sender.send(TraversalMessage::Entries(chunk)).is_err() {
+            cancellation_flag.store(true, Ordering::Relaxed);
             return Err(NativeError::Cancelled);
         }
     }
 
-    let total_files = included + excluded_files;
+    let total_files = included + excluded;
     let excluded_percentage = if total_files == 0 {
         0.0
     } else {
-        (excluded_files as f64 / total_files as f64) * 100.0
+        (excluded as f64 / total_files as f64) * 100.0
     };
 
     let mut summary = json!({
         "total_files": total_files,
-        "excluded_files": excluded_files,
-        "included_files": included_files,
+        "excluded_files": excluded,
+        "included_files": included,
         "excluded_percentage": excluded_percentage,
         "failed_files": failed_files,
-        "stopped_early": cancelled,
+        "stopped_early": cancellation_flag.load(Ordering::Relaxed),
         "processed_files": processed,
     });
 
@@ -574,9 +631,10 @@ fn aggregate_entries(
         );
     }
 
-    sender
-        .send(TraversalMessage::Summary(summary))
-        .map_err(|_| NativeError::Cancelled)?;
+    if sender.send(TraversalMessage::Summary(summary)).is_err() {
+        cancellation_flag.store(true, Ordering::Relaxed);
+        return Err(NativeError::Cancelled);
+    }
 
     Ok(())
 }

@@ -22,8 +22,13 @@ pub fn classify_binary(path: &Path) -> Result<bool, NativeError> {
 pub fn read_binary_preview(path: &Path, max_preview_bytes: usize) -> Result<Value, NativeError> {
     let metadata = path.metadata()?;
     let file_size = metadata.len() as usize;
+
     if file_size > max_preview_bytes {
-        // still allow preview up to limit
+        return Ok(json!({
+            "type": "excluded",
+            "reason": "binary_too_large",
+            "size": file_size,
+        }));
     }
 
     let read_limit = std::cmp::min(max_preview_bytes, MAX_BINARY_CONTENT_BYTES);

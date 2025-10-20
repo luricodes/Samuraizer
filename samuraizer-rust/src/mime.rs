@@ -240,8 +240,7 @@ fn classify_uncached(path: &Path) -> Result<bool, NativeError> {
     if let Some(result) = magic_detect(&sample) {
         return Ok(result);
     }
-    let (printable, control, _nul) = printable_ratio(&sample);
-    Ok(!(printable > 0.85 && control < 0.05))
+    Ok(false)
 }
 
 pub fn is_binary(path: &Path) -> Result<bool, NativeError> {
