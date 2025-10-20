@@ -62,6 +62,7 @@ def get_directory_structure(
         encoding=encoding or 'utf-8',
         hashing_enabled=hashing_enabled,
         progress_callback=progress_callback,
+        chunk_callback=chunk_callback,
         cancellation_token=cancellation_token,
         chunk_size=chunk_size,
         max_pending_tasks=max_pending_tasks,
