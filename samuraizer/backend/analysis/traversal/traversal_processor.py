@@ -15,6 +15,7 @@ import io
 from .traversal_core import traverse_and_collect
 from ..file_processor import process_file
 from ...services.event_service.cancellation import CancellationToken
+from samuraizer.utils.encoding_utils import normalize_encoding_hint
 
 _DEFAULT_CHUNK_SIZE = 256
 _DEFAULT_PENDING_MULTIPLIER = 4
@@ -30,7 +31,7 @@ def get_directory_structure(
     image_extensions: Set[str],
     exclude_patterns: List[str],
     threads: int,
-    encoding: str = 'utf-8',
+    encoding: Optional[str] = None,
     hashing_enabled: bool = True,
     progress_callback: Optional[Callable[[int], None]] = None,
     cancellation_token: Optional[CancellationToken] = None,
@@ -52,7 +53,7 @@ def get_directory_structure(
         image_extensions=image_extensions,
         exclude_patterns=exclude_patterns,
         threads=threads,
-        encoding=encoding or 'utf-8',
+        encoding=encoding,
         hashing_enabled=hashing_enabled,
         progress_callback=progress_callback,
         cancellation_token=cancellation_token,
@@ -88,7 +89,7 @@ def generate_directory_chunks(
     image_extensions: Set[str],
     exclude_patterns: List[str],
     threads: int,
-    encoding: str,
+    encoding: Optional[str],
     hashing_enabled: bool,
     progress_callback: Optional[Callable[[int], None]],
     cancellation_token: Optional[CancellationToken],
@@ -98,6 +99,7 @@ def generate_directory_chunks(
     chunk_size = max(1, chunk_size)
     max_workers = max(1, threads)
     pending_limit = max_pending_tasks or max(max_workers * _DEFAULT_PENDING_MULTIPLIER, chunk_size)
+    normalized_encoding = normalize_encoding_hint(encoding)
 
     file_iterator, counters = traverse_and_collect(
         root_dir,
@@ -153,7 +155,7 @@ def generate_directory_chunks(
                 max_file_size,
                 include_binary,
                 image_extensions,
-                encoding=encoding,
+                encoding=normalized_encoding,
                 hashing_enabled=hashing_enabled,
             )
             pending[future] = file_path

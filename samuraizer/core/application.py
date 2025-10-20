@@ -36,6 +36,7 @@ from samuraizer.backend.services.event_service.cancellation import CancellationT
 from samuraizer.backend.services.logging.logging_service import setup_logging
 from samuraizer.cli.parser import SUPPORTED_FORMATS, parse_arguments
 from samuraizer.config import ConfigError, ConfigValidationError
+from samuraizer.utils.encoding_utils import normalize_encoding_hint
 from samuraizer.config.unified import UnifiedConfigManager
 
 DEFAULT_THREAD_MULTIPLIER = 2
@@ -191,7 +192,8 @@ def run() -> None:
     if args.follow_symlinks:
         follow_symlinks = True
 
-    encoding = args.encoding or analysis_defaults.get("encoding", "auto")
+    raw_encoding = args.encoding if args.encoding is not None else analysis_defaults.get("encoding", "auto")
+    encoding = normalize_encoding_hint(raw_encoding)
 
     threads = analysis_defaults.get("threads") or (
         multiprocessing.cpu_count() * DEFAULT_THREAD_MULTIPLIER
@@ -249,7 +251,10 @@ def run() -> None:
     logging.info("Binary files %s included", "are" if include_binary else "are not")
     logging.info("Symbolic links are %s", "followed" if follow_symlinks else "not followed")
     logging.info("Number of threads: %s", threads)
-    logging.info("Standard encoding: %s", encoding)
+    if encoding is None:
+        logging.info("Standard encoding: auto (automatic detection)")
+    else:
+        logging.info("Standard encoding: %s", encoding)
     logging.info("Output file: %s (%s)", output_file, output_format)
     logging.info("Include summary: %s", include_summary)
     logging.info("Cache enabled: %s", cache_enabled)

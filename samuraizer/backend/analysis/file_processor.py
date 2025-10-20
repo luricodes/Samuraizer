@@ -11,6 +11,7 @@ from samuraizer.backend.cache.cache_operations import get_cached_entry, set_cach
 from samuraizer.backend.cache.connection_pool import get_connection_context, is_cache_disabled
 from samuraizer.backend.cache.cache_cleaner import clean_cache
 from ..analysis.hash_service import HashService
+from samuraizer.utils.encoding_utils import normalize_encoding_hint
 from ...utils.file_utils.mime_detection import is_binary
 from ...config.timezone_service import TimezoneService
 
@@ -243,7 +244,9 @@ def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]
         with open(file_path, 'rb') as f:
             sample = f.read(min(read_limit, _ENCODING_SAMPLE_BYTES))
 
-            if encoding is None:
+            encoding_hint = normalize_encoding_hint(encoding)
+
+            if encoding_hint is None:
                 matches = charset_normalizer.from_bytes(sample)
                 best_match = matches.best()
                 if best_match and best_match.encoding:
@@ -253,8 +256,8 @@ def _read_text_file(file_path: Path, max_file_size: int, encoding: Optional[str]
                     encoding_to_use = 'utf-8'
                     logger.warning(f"Could not detect encoding for {file_path}. Falling back to 'utf-8'.")
             else:
-                encoding_to_use = encoding
-                logger.debug(f"Using provided encoding '{encoding}' for file {file_path}")
+                encoding_to_use = encoding_hint
+                logger.debug(f"Using provided encoding '{encoding_hint}' for file {file_path}")
 
             f.seek(0)
             decoder = getincrementaldecoder(encoding_to_use)(errors='replace')
