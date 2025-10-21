@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from PyQt6.QtCore import QItemSelectionModel, QModelIndex, Qt, pyqtSignal
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QAction,
     QApplication,
     QDockWidget,
     QFileDialog,

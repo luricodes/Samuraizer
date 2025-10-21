@@ -18,7 +18,7 @@ class RunHistoryManager(QObject):
     comparisonRequested = pyqtSignal(RunHistoryEntry, RunHistoryEntry)
     comparisonUnavailable = pyqtSignal(str)
     openRequested = pyqtSignal(RunHistoryEntry)
-    activeEntryChanged = pyqtSignal(Optional[str])
+    activeEntryChanged = pyqtSignal(object)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
