@@ -1,12 +1,7 @@
 import argparse
-import logging
 from typing import Optional
 
-from samuraizer.backend.services.logging.logging_service import setup_logging
 from samuraizer.config.timezone_service import TimezoneService
-
-setup_logging(verbose=False)
-logger = logging.getLogger(__name__)
 
 
 SUPPORTED_FORMATS = ["json", "yaml", "xml", "jsonl", "dot", "csv", "sexp", "msgpack"]
