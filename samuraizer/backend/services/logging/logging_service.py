@@ -11,7 +11,8 @@ def setup_logging(
     log_file: Optional[str] = None,
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,
-    force_color: bool = False
+    force_color: Optional[bool] = None,
+    preserve_existing_handlers: bool = False,
 ) -> None:
     """
     Set up logging with proper color support and file handling.
@@ -21,19 +22,40 @@ def setup_logging(
         log_file: Optional path to log file
         max_bytes: Maximum size of log file before rotation
         backup_count: Number of backup files to keep
-        force_color: Force color output regardless of terminal support
+        force_color: Force (True) or disable (False) colored output. ``None`` keeps
+            automatic detection.
+        preserve_existing_handlers: Avoid clearing pre-configured logging handlers
+            when set to True.
     """
+    # Override color detection when requested, otherwise reset to automatic
+    color_support.set_force_color(force_color)
+
     # Set up root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
-    # Remove any existing handlers
-    root_logger.handlers.clear()
+    # Remove any existing handlers unless preserving them
+    if not preserve_existing_handlers:
+        root_logger.handlers.clear()
 
     # Console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(ColorFormatter())
-    root_logger.addHandler(console_handler)
+    console_handler: Optional[logging.Handler] = None
+    reused_console_handler = False
+
+    if preserve_existing_handlers:
+        for handler in root_logger.handlers:
+            if isinstance(handler, logging.StreamHandler) and getattr(handler, 'stream', None) in {sys.stdout, sys.stderr}:
+                console_handler = handler
+                break
+
+    if console_handler is None:
+        console_handler = logging.StreamHandler(sys.stdout)
+        root_logger.addHandler(console_handler)
+    else:
+        reused_console_handler = True
+
+    if isinstance(console_handler, logging.StreamHandler) and not reused_console_handler:
+        console_handler.setFormatter(ColorFormatter())
 
     # File handler if specified
     if log_file:
@@ -70,6 +92,7 @@ def setup_logging(
     # Log initial setup information
     if verbose:
         logging.debug(color_support.info("Verbose logging enabled"))
+    color_mode = "forced" if force_color is not None else "auto"
     logging.debug(color_support.info(
-        f"Color support: {color_support.supports_color()}"
+        f"Color support: {color_support.supports_color()} ({color_mode})"
     ))

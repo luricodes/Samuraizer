@@ -19,14 +19,9 @@ class ColorSupport:
         if self._initialized:
             return
 
-        # Determine if colors should be forced or disabled
-        force_color = os.environ.get('FORCE_COLOR', '').lower()
-        no_color = os.environ.get('NO_COLOR') is not None
-        
-        if no_color:
-            self._force_color = False
-        elif force_color in ('1', 'true', 'yes'):
-            self._force_color = True
+        env_force_color = self._get_env_force_color()
+        if env_force_color is not None:
+            self._force_color = env_force_color
         
         # Initialize colorama with appropriate settings
         colorama_init(
@@ -37,6 +32,44 @@ class ColorSupport:
         )
         
         self._initialized = True
+
+    def _get_env_force_color(self) -> Optional[bool]:
+        force_color = os.environ.get('FORCE_COLOR', '').lower()
+        no_color = os.environ.get('NO_COLOR') is not None
+
+        if no_color:
+            return False
+        if force_color in ('1', 'true', 'yes'):
+            return True
+        return None
+
+    def set_force_color(self, force: Optional[bool]) -> None:
+        """Force or reset color support detection.
+
+        Args:
+            force: ``True`` to force-enable colors, ``False`` to disable them and
+                ``None`` to fall back to automatic (environment-based) detection.
+        """
+
+        if force not in (True, False, None):
+            raise ValueError("force must be True, False or None")
+
+        target_force = self._get_env_force_color() if force is None else force
+
+        if target_force == self._force_color:
+            return
+
+        self._force_color = target_force
+        # reset cached detection results so the change takes immediate effect
+        self.supports_color.cache_clear()
+
+        # Re-initialise colorama with the updated configuration
+        colorama_init(
+            strip=not self.supports_color(),
+            convert=True,
+            wrap=True,
+            autoreset=True,
+        )
 
     @lru_cache(maxsize=1)
     def supports_color(self) -> bool:
