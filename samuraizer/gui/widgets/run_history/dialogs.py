@@ -1,19 +1,8 @@
 """Dialogs used by the run history dock."""
 from __future__ import annotations
 
-<<<<<<< ours
-<<<<<<< ours
-import json
-import difflib
-from typing import Any, Iterable, Tuple
-=======
 import difflib
 from typing import Iterable, Tuple
->>>>>>> theirs
-=======
-import difflib
-from typing import Iterable, Tuple
->>>>>>> theirs
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -29,22 +18,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .highlighters import DiffHighlighter
-<<<<<<< ours
-<<<<<<< ours
-from .models import RunHistoryEntry
-
-
-def _normalise_json(data: Any) -> str:
-    try:
-        return json.dumps(data, indent=2, sort_keys=True, default=str)
-    except TypeError:
-        return json.dumps(json.loads(json.dumps(data, default=str)), indent=2, sort_keys=True)
-=======
 from .models import RunHistoryEntry, normalise_json
->>>>>>> theirs
-=======
-from .models import RunHistoryEntry, normalise_json
->>>>>>> theirs
 
 
 class ComparisonDialog(QDialog):
@@ -104,18 +78,8 @@ class ComparisonDialog(QDialog):
     def _build_diff_tab(self) -> None:
         diff_text = "\n".join(
             difflib.unified_diff(
-<<<<<<< ours
-<<<<<<< ours
-                _normalise_json(self.reference.results).splitlines(),
-                _normalise_json(self.target.results).splitlines(),
-=======
                 normalise_json(self.reference.results).splitlines(),
                 normalise_json(self.target.results).splitlines(),
->>>>>>> theirs
-=======
-                normalise_json(self.reference.results).splitlines(),
-                normalise_json(self.target.results).splitlines(),
->>>>>>> theirs
                 fromfile=self.reference.display_name,
                 tofile=self.target.display_name,
                 lineterm="",

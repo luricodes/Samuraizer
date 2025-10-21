@@ -1,14 +1,7 @@
 """Central management for run history entries."""
 from __future__ import annotations
 
-<<<<<<< ours
-<<<<<<< ours
-=======
 from copy import deepcopy
->>>>>>> theirs
-=======
-from copy import deepcopy
->>>>>>> theirs
 from datetime import datetime
 import uuid
 from typing import Dict, Iterable, List, Optional
@@ -25,15 +18,7 @@ class RunHistoryManager(QObject):
     comparisonRequested = pyqtSignal(RunHistoryEntry, RunHistoryEntry)
     comparisonUnavailable = pyqtSignal(str)
     openRequested = pyqtSignal(RunHistoryEntry)
-<<<<<<< ours
-<<<<<<< ours
-    activeEntryChanged = pyqtSignal(str)
-=======
     activeEntryChanged = pyqtSignal(Optional[str])
->>>>>>> theirs
-=======
-    activeEntryChanged = pyqtSignal(Optional[str])
->>>>>>> theirs
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -43,14 +28,6 @@ class RunHistoryManager(QObject):
 
     # ------------------------------------------------------------------
     def add_entry(self, entry: RunHistoryEntry) -> None:
-<<<<<<< ours
-<<<<<<< ours
-        self._entries[entry.identifier] = entry
-        self._order.append(entry.identifier)
-        self.entryAdded.emit(entry)
-=======
-=======
->>>>>>> theirs
         if entry.identifier in self._entries:
             self._entries[entry.identifier] = entry
             self.entryAdded.emit(entry)
@@ -59,10 +36,6 @@ class RunHistoryManager(QObject):
             self._entries[entry.identifier] = entry
             self._order.append(entry.identifier)
             self.entryAdded.emit(entry)
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
         self.set_active_entry(entry.identifier)
 
     def create_entry(
@@ -86,21 +59,9 @@ class RunHistoryManager(QObject):
             output_format=output_format,
             duration_seconds=duration,
             processed_files=processed_files,
-<<<<<<< ours
-<<<<<<< ours
-            configuration=dict(configuration),
-            summary=dict(summary or {}),
-            results=dict(results or {}),
-=======
             configuration=deepcopy(configuration),
             summary=deepcopy(summary or {}),
             results=deepcopy(results or {}),
->>>>>>> theirs
-=======
-            configuration=deepcopy(configuration),
-            summary=deepcopy(summary or {}),
-            results=deepcopy(results or {}),
->>>>>>> theirs
         )
         self.add_entry(entry)
         return entry
@@ -115,19 +76,10 @@ class RunHistoryManager(QObject):
                 yield entry
 
     def set_active_entry(self, entry_id: Optional[str]) -> None:
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
         if entry_id is not None and entry_id not in self._entries:
             entry_id = None
         if entry_id == self._active_entry_id:
             return
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
         self._active_entry_id = entry_id
         self.activeEntryChanged.emit(entry_id)
 

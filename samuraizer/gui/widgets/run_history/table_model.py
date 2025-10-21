@@ -1,15 +1,7 @@
 """Model classes backing the run history table view."""
 from __future__ import annotations
 
-<<<<<<< ours
-<<<<<<< ours
-from typing import List, Optional
-=======
 from typing import Dict, List, Optional
->>>>>>> theirs
-=======
-from typing import Dict, List, Optional
->>>>>>> theirs
 
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt, QVariant
 from PyQt6.QtCore import QSortFilterProxyModel
@@ -33,14 +25,7 @@ class RunHistoryTableModel(QAbstractTableModel):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._entries: List[RunHistoryEntry] = []
-<<<<<<< ours
-<<<<<<< ours
-=======
         self._row_lookup: Dict[str, int] = {}
->>>>>>> theirs
-=======
-        self._row_lookup: Dict[str, int] = {}
->>>>>>> theirs
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802 - Qt API
         if parent.isValid():
@@ -91,14 +76,6 @@ class RunHistoryTableModel(QAbstractTableModel):
         return QVariant()
 
     def add_entry(self, entry: RunHistoryEntry) -> None:
-<<<<<<< ours
-<<<<<<< ours
-        row = len(self._entries)
-        self.beginInsertRows(QModelIndex(), row, row)
-        self._entries.append(entry)
-=======
-=======
->>>>>>> theirs
         existing_row = self._row_lookup.get(entry.identifier)
         if existing_row is not None:
             self._entries[existing_row] = entry
@@ -112,10 +89,6 @@ class RunHistoryTableModel(QAbstractTableModel):
         self.beginInsertRows(QModelIndex(), row, row)
         self._entries.append(entry)
         self._row_lookup[entry.identifier] = row
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
         self.endInsertRows()
 
     def clear(self) -> None:
@@ -123,14 +96,7 @@ class RunHistoryTableModel(QAbstractTableModel):
             return
         self.beginRemoveRows(QModelIndex(), 0, len(self._entries) - 1)
         self._entries.clear()
-<<<<<<< ours
-<<<<<<< ours
-=======
         self._row_lookup.clear()
->>>>>>> theirs
-=======
-        self._row_lookup.clear()
->>>>>>> theirs
         self.endRemoveRows()
 
     def entry_at(self, row: int) -> Optional[RunHistoryEntry]:
@@ -141,11 +107,6 @@ class RunHistoryTableModel(QAbstractTableModel):
     def entries(self) -> List[RunHistoryEntry]:
         return list(self._entries)
 
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
     def entry_by_id(self, entry_id: str) -> Optional[RunHistoryEntry]:
         row = self._row_lookup.get(entry_id)
         if row is None:
@@ -158,10 +119,6 @@ class RunHistoryTableModel(QAbstractTableModel):
             return QModelIndex()
         return self.index(row, 0)
 
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 
 class RunHistoryProxyModel(QSortFilterProxyModel):
     """Proxy model adding filtering behaviour for the run history."""

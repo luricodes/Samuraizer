@@ -1,14 +1,3 @@
-<<<<<<< ours
-<<<<<<< ours
-"""Data structures used by the run history UI components."""
-from __future__ import annotations
-
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Dict, Optional
-=======
-=======
->>>>>>> theirs
 """Data structures and helpers used by the run history UI components."""
 from __future__ import annotations
 
@@ -33,10 +22,6 @@ def normalise_json(data: Any) -> str:
     except TypeError:
         safe_payload = json.loads(json.dumps(data, default=str))
         return json.dumps(safe_payload, indent=2, sort_keys=True)
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 
 
 @dataclass(slots=True)
@@ -70,11 +55,6 @@ class RunHistoryEntry:
         if self.processed_files is not None:
             overview["Files"] = str(self.processed_files)
         return overview
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
 
     # ------------------------------------------------------------------
     # Rendering helpers
@@ -120,7 +100,3 @@ class RunHistoryEntry:
         """Return a JSON string representing the export payload."""
 
         return normalise_json(self.export_payload())
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs

@@ -1,19 +1,6 @@
 """Dock widget exposing the run history table and related controls."""
 from __future__ import annotations
 
-<<<<<<< ours
-<<<<<<< ours
-import json
-from pathlib import Path
-from typing import Iterable, Optional
-
-from PyQt6.QtCore import QModelIndex, Qt, pyqtSignal
-from PyQt6.QtGui import QAction
-from PyQt6.QtWidgets import (
-    QAbstractItemView,
-=======
-=======
->>>>>>> theirs
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -21,10 +8,6 @@ from PyQt6.QtCore import QItemSelectionModel, QModelIndex, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QAction,
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
     QApplication,
     QDockWidget,
     QFileDialog,
@@ -84,28 +67,14 @@ class RunHistoryDock(QDockWidget):
             self._presets.add(entry.preset)
         self._refresh_filter_buttons()
         self._proxy_model.sort(1, Qt.SortOrder.DescendingOrder)
-<<<<<<< ours
-<<<<<<< ours
-=======
         self._update_action_states()
->>>>>>> theirs
-=======
-        self._update_action_states()
->>>>>>> theirs
 
     def clear(self) -> None:
         self._table_model.clear()
         self._repositories.clear()
         self._presets.clear()
         self._refresh_filter_buttons()
-<<<<<<< ours
-<<<<<<< ours
-=======
         self._update_action_states()
->>>>>>> theirs
-=======
-        self._update_action_states()
->>>>>>> theirs
 
     def show_comparison(self, reference: RunHistoryEntry, target: RunHistoryEntry) -> None:
         """Show the comparison dialog between two entries."""
@@ -161,16 +130,8 @@ class RunHistoryDock(QDockWidget):
         self.table.setSortingEnabled(True)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-<<<<<<< ours
-<<<<<<< ours
-=======
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
->>>>>>> theirs
-=======
-        self.table.verticalHeader().setVisible(False)
-        self.table.setAlternatingRowColors(True)
->>>>>>> theirs
         main_layout.addWidget(self.table, 1)
 
         action_layout = QHBoxLayout()
@@ -194,35 +155,18 @@ class RunHistoryDock(QDockWidget):
         self.share_button.clicked.connect(self._on_copy_summary)
         action_layout.addWidget(self.share_button)
 
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
         # Actions are enabled dynamically based on the current selection
         self.open_button.setEnabled(False)
         self.compare_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.share_button.setEnabled(False)
 
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
         main_layout.addLayout(action_layout)
 
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
 
         self.setWidget(container)
-<<<<<<< ours
-<<<<<<< ours
-
-    def _connect_signals(self) -> None:
-        self.search_field.textChanged.connect(self._proxy_model.set_search_text)
-=======
-=======
->>>>>>> theirs
         self._update_action_states()
 
     def _connect_signals(self) -> None:
@@ -230,28 +174,11 @@ class RunHistoryDock(QDockWidget):
         selection_model = self.table.selectionModel()
         if selection_model is not None:
             selection_model.selectionChanged.connect(lambda *_: self._update_action_states())
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 
     # ------------------------------------------------------------------
     # Helper methods
     # ------------------------------------------------------------------
     def _selected_entry_ids(self) -> list[str]:
-<<<<<<< ours
-<<<<<<< ours
-        rows: set[int] = set()
-        for index in self.table.selectionModel().selectedRows():
-            rows.add(index.row())
-        ids: list[str] = []
-        for row in rows:
-            source_index = self._proxy_model.mapToSource(self._proxy_model.index(row, 0))
-            entry = self._table_model.data(source_index, Qt.ItemDataRole.UserRole)
-            if isinstance(entry, RunHistoryEntry):
-=======
-=======
->>>>>>> theirs
         selection_model = self.table.selectionModel()
         if selection_model is None:
             return []
@@ -263,10 +190,6 @@ class RunHistoryDock(QDockWidget):
                 continue
             entry = self._table_model.entry_at(source_index.row())
             if entry is not None:
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
                 ids.append(entry.identifier)
         return ids
 
@@ -274,16 +197,6 @@ class RunHistoryDock(QDockWidget):
         ids = self._selected_entry_ids()
         if not ids:
             return None
-<<<<<<< ours
-<<<<<<< ours
-        entry_id = ids[0]
-        for entry in self._table_model.entries():
-            if entry.identifier == entry_id:
-                return entry
-        return None
-=======
-=======
->>>>>>> theirs
         return self._table_model.entry_by_id(ids[0])
 
     def _update_action_states(self) -> None:
@@ -327,10 +240,6 @@ class RunHistoryDock(QDockWidget):
         selection_model.select(proxy_index, selection_flags)
         self.table.scrollTo(proxy_index, QAbstractItemView.ScrollHint.PositionAtCenter)
         self._update_action_states()
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 
     def _show_context_menu(self, position) -> None:
         menu = QMenu(self)
@@ -423,15 +332,7 @@ class RunHistoryDock(QDockWidget):
 
         try:
             with open(file_path, "w", encoding="utf-8") as handle:
-<<<<<<< ours
-<<<<<<< ours
-                json.dump(entry.results, handle, indent=2, sort_keys=True)
-=======
                 handle.write(entry.export_as_json())
->>>>>>> theirs
-=======
-                handle.write(entry.export_as_json())
->>>>>>> theirs
         except Exception as exc:  # pragma: no cover - file system interaction
             QMessageBox.critical(self, "Export Failed", f"Could not export results:\n{exc}")
             return
@@ -444,16 +345,7 @@ class RunHistoryDock(QDockWidget):
             QMessageBox.information(self, "Run History", "Select a run to copy the summary.")
             return
 
-<<<<<<< ours
-<<<<<<< ours
-        parts = [f"{key}: {value}" for key, value in entry.metadata_for_overview().items()]
-        summary_text = "\n".join(parts)
-=======
         summary_text = entry.summary_text()
->>>>>>> theirs
-=======
-        summary_text = entry.summary_text()
->>>>>>> theirs
         try:
             QApplication.clipboard().setText(summary_text)
             QMessageBox.information(self, "Run History", "Run summary copied to clipboard.")

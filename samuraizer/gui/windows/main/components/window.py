@@ -192,14 +192,7 @@ class MainWindow(BaseWindow):
         self.run_history_manager.comparisonUnavailable.connect(
             self.run_history_dock.notify_comparison_unavailable
         )
-<<<<<<< ours
-<<<<<<< ours
-=======
         self.run_history_manager.activeEntryChanged.connect(self.run_history_dock.set_active_entry)
->>>>>>> theirs
-=======
-        self.run_history_manager.activeEntryChanged.connect(self.run_history_dock.set_active_entry)
->>>>>>> theirs
         self.right_panel.attach_run_history_manager(self.run_history_manager)
 
     # Public interface methods delegated to managers
