@@ -3,6 +3,10 @@ import logging
 from PyQt6.QtWidgets import QMessageBox
 from samuraizer.gui.widgets.analysis_viewer.main_viewer import ResultsViewWidget
 from samuraizer.gui.workers.analysis.analyzer_worker import AnalyzerWorker
+from samuraizer.gui.windows.main.components.run_history_manager import RunHistoryManager
+from samuraizer.config.unified import UnifiedConfigManager
+
+from samuraizer.gui.widgets.run_history import RunHistoryEntry
 
 if TYPE_CHECKING:
     from samuraizer.gui.windows.main.components.window import MainWindow
@@ -14,7 +18,7 @@ class RightPanel(ResultsViewWidget):
     
     def __init__(self, parent: 'MainWindow') -> None:
         """Initialize the right panel.
-        
+
         Args:
             parent: Parent MainWindow instance
         """
@@ -22,15 +26,23 @@ class RightPanel(ResultsViewWidget):
         self.main_window = parent
         self._configuration: Dict[str, Any] = {}
         self._results: Optional[Dict[str, Any]] = None
-        
+        self._run_history_manager: Optional[RunHistoryManager] = None
+
         # Ensure progress monitor is properly initialized
         if not hasattr(self, 'progress_monitor'):
             logger.error("Progress monitor not initialized by parent class")
             raise RuntimeError("Progress monitor initialization failed")
-    
+
+    def attach_run_history_manager(self, manager: RunHistoryManager) -> None:
+        """Attach a run history manager and wire up callbacks."""
+
+        super().attach_run_history_manager(manager)
+        self._run_history_manager = manager
+        manager.openRequested.connect(self._open_history_entry)
+
     def setConfiguration(self, config: Dict[str, Any]) -> None:
         """Set the current configuration.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -122,7 +134,7 @@ class RightPanel(ResultsViewWidget):
 
     def analysisFinished(self, results: Dict[str, Any]) -> None:
         """Handle analysis completion.
-        
+
         Args:
             results: Analysis results to display
         """
@@ -141,9 +153,16 @@ class RightPanel(ResultsViewWidget):
             
         try:
             self._results = results.copy()
+            entry = self._register_run_history(results)
             super().analysisFinished(results)
+
+            if entry is not None and self.results_tabs.currentWidget() is not None:
+                current_view = self.results_tabs.currentWidget()
+                setattr(current_view, 'run_history_id', entry.identifier)
+                if self.run_history_manager is not None:
+                    self.run_history_manager.set_active_entry(entry.identifier)
             logger.info("Analysis results displayed successfully")
-            
+
         except Exception as e:
             error_msg = f"Failed to display analysis results: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -200,6 +219,57 @@ class RightPanel(ResultsViewWidget):
         """Hide progress monitoring UI."""
         if hasattr(self, 'progress_monitor'):
             self.progress_monitor.hideProgress()
+
+    # ------------------------------------------------------------------
+    def _register_run_history(self, results: Dict[str, Any]) -> Optional[RunHistoryEntry]:
+        if self._run_history_manager is None:
+            return None
+
+        repository = self._configuration.get('repository', {}).get('repository_path', '') if self._configuration else ''
+        preset = UnifiedConfigManager().active_profile
+        output_format = self.result_processor.getOutputFormat()
+        summary = results.get('summary', {}) if isinstance(results, dict) else {}
+        duration = None
+        processed = None
+        if isinstance(summary, dict):
+            duration = summary.get('duration') or summary.get('elapsed_seconds') or summary.get('elapsed_time')
+            processed = summary.get('total_files') or summary.get('files_processed') or summary.get('processed_files')
+            try:
+                if duration is not None:
+                    duration = float(duration)
+            except (TypeError, ValueError):
+                duration = None
+            try:
+                if processed is not None:
+                    processed = int(processed)
+            except (TypeError, ValueError):
+                processed = None
+
+        display_name = f"Analysis {self.tab_counter + 1}"
+        entry = self._run_history_manager.create_entry(
+            display_name=display_name,
+            repository=repository,
+            preset=preset,
+            output_format=output_format,
+            configuration=self._configuration or {},
+            summary=summary or {},
+            results=results or {},
+            duration=duration,
+            processed_files=processed,
+        )
+        return entry
+
+    def _open_history_entry(self, entry: RunHistoryEntry) -> None:
+        try:
+            view, _ = self._add_results_tab(entry.results, entry.display_name)
+            if view is not None:
+                setattr(view, 'run_history_id', entry.identifier)
+                if self.details_panel is not None:
+                    self.details_panel.set_selection(entry.results)
+                if self.run_history_manager is not None:
+                    self.run_history_manager.set_active_entry(entry.identifier)
+        except Exception as exc:
+            logger.error("Failed to open run history entry: %s", exc, exc_info=True)
 
     def updateProgress(self, current: int, total: int) -> None:
         """Update the progress information.

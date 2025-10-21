@@ -1,7 +1,7 @@
 from pathlib import Path
 import logging
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QMessageBox, QApplication
-from PyQt6.QtCore import QSize
+from PyQt6.QtCore import QSize, Qt
 from samuraizer.backend.cache.connection_pool import (
     close_all_connections,
     flush_pending_writes,
@@ -28,6 +28,8 @@ from samuraizer.gui.windows.main.components.ui_state import UIStateManager, Anal
 from samuraizer.gui.windows.main.components.dialog_manager import DialogManager
 from samuraizer.config.unified import UnifiedConfigManager
 from samuraizer.gui.app.theme_manager import ThemeManager
+from samuraizer.gui.windows.main.components.run_history_manager import RunHistoryManager
+from samuraizer.gui.widgets.run_history import RunHistoryDock, RunHistoryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +49,13 @@ class MainWindow(BaseWindow):
 
         # Setup UI components in the correct order
         self.setup_ui()
-        
+
+        # Run history infrastructure
+        self.run_history_manager = RunHistoryManager(self)
+        self.run_history_dock = self._create_run_history_dock()
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.run_history_dock)
+        self.run_history_dock.hide()
+
         # Initialize managers in the correct order
         # UIStateManager must be initialized first as others depend on it
         self.ui_state_manager = UIStateManager(self, self.left_panel, self.right_panel)
@@ -70,7 +78,10 @@ class MainWindow(BaseWindow):
             message_presenter=message_presenter,
         )
         self.dialog_manager = DialogManager(self)
-        
+
+        # Wire up run history interactions
+        self._connect_run_history()
+
         # Set initial UI state
         self.ui_state_manager.set_analysis_state(AnalysisState.IDLE)
         
@@ -168,6 +179,29 @@ class MainWindow(BaseWindow):
         self.main_layout.addWidget(self.left_panel, 1)
         self.main_layout.addWidget(self.right_panel, 2)
 
+    def _create_run_history_dock(self) -> RunHistoryDock:
+        dock = RunHistoryDock(self)
+        dock.requestComparison.connect(self._on_run_history_compare)
+        dock.requestOpen.connect(self._on_run_history_open)
+        return dock
+
+    def _connect_run_history(self) -> None:
+        self.run_history_manager.entryAdded.connect(self.run_history_dock.add_entry)
+        self.run_history_manager.entryAdded.connect(self._on_history_entry_added)
+        self.run_history_manager.comparisonRequested.connect(self._show_run_comparison)
+        self.run_history_manager.comparisonUnavailable.connect(
+            self.run_history_dock.notify_comparison_unavailable
+        )
+<<<<<<< ours
+<<<<<<< ours
+=======
+        self.run_history_manager.activeEntryChanged.connect(self.run_history_dock.set_active_entry)
+>>>>>>> theirs
+=======
+        self.run_history_manager.activeEntryChanged.connect(self.run_history_dock.set_active_entry)
+>>>>>>> theirs
+        self.right_panel.attach_run_history_manager(self.run_history_manager)
+
     # Public interface methods delegated to managers
     def open_repository(self) -> None:
         """Open a repository for analysis."""
@@ -197,6 +231,28 @@ class MainWindow(BaseWindow):
     def get_connection_context(self):
         """Get the connection context for database operations."""
         return get_connection_context()
+
+    # ------------------------------------------------------------------
+    def _on_run_history_compare(self, entry_id: str) -> None:
+        self.run_history_manager.request_comparison(entry_id)
+        if self.run_history_dock.isHidden():
+            self.run_history_dock.show()
+        self.run_history_dock.raise_()
+
+    def _on_run_history_open(self, entry_id: str) -> None:
+        self.run_history_manager.request_open(entry_id)
+        if self.run_history_dock.isHidden():
+            self.run_history_dock.show()
+
+    def _show_run_comparison(self, reference: RunHistoryEntry, target: RunHistoryEntry) -> None:
+        if self.run_history_dock.isHidden():
+            self.run_history_dock.show()
+        self.run_history_dock.raise_()
+        self.run_history_dock.show_comparison(reference, target)
+
+    def _on_history_entry_added(self, _entry: RunHistoryEntry) -> None:
+        if self.run_history_dock.isHidden():
+            self.run_history_dock.show()
 
     def closeEvent(self, event) -> None:
         """Handle window closure."""

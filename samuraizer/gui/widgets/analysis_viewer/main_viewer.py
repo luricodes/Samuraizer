@@ -83,6 +83,7 @@ class ResultsViewWidget(QWidget):
         self._worker_connections: List[
             Tuple[pyqtBoundSignal, Callable[..., None]]
         ] = []
+        self.run_history_manager = None
 
         # Initialize components
         self.progress_monitor = ProgressMonitor(self)
@@ -153,10 +154,20 @@ class ResultsViewWidget(QWidget):
 
     def _on_tab_changed(self, index: int):
         """Handle results tab changes."""
-        if index >= 0 and self.details_panel is not None:
+        current_widget = None
+        if index >= 0:
             current_widget = self.results_tabs.widget(index)
-            if hasattr(current_widget, 'results_data'):
-                self.details_panel.set_selection(current_widget.results_data)
+
+        if self.details_panel is not None and current_widget is not None and hasattr(current_widget, 'results_data'):
+            self.details_panel.set_selection(current_widget.results_data)
+
+        if self.run_history_manager is not None:
+            entry_id = getattr(current_widget, 'run_history_id', None) if current_widget is not None else None
+            self.run_history_manager.set_active_entry(entry_id)
+
+    def attach_run_history_manager(self, manager) -> None:
+        """Attach a run history manager to synchronise selection state."""
+        self.run_history_manager = manager
 
     def setupLogging(self):
         """Set up logging to route messages to the GUI log panel."""
@@ -367,23 +378,10 @@ class ResultsViewWidget(QWidget):
     def analysisFinished(self, results: Dict[str, Any]):
         try:
             self.results_data = results
-            view = self.result_processor.createView(results)
-            if view:
-                self.tab_counter += 1
-                tab_name = f"Analysis {self.tab_counter}"
-                
-                view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-                view.customContextMenuRequested.connect(
-                    lambda pos, v=view: self.results_tabs.showResultContextMenu(pos, v, self.exportResults)
-                )
-                
-                self.results_tabs.addTab(view, tab_name)
-                self.results_tabs.setCurrentWidget(view)
-                self.results_tabs.active_analyses.add(tab_name)
-                
-                # Update the details panel with the new results
-                if self.details_panel is not None:
-                    self.details_panel.set_selection(results)
+            view, tab_name = self._add_results_tab(results)
+
+            if view is not None and self.details_panel is not None:
+                self.details_panel.set_selection(results)
             
             self.progress_monitor.hideProgress()
 
@@ -397,6 +395,27 @@ class ResultsViewWidget(QWidget):
         except Exception as e:
             logger.error(f"Error handling analysis results: {e}", exc_info=True)
             self.handleError(f"Error processing results: {str(e)}")
+
+    def _add_results_tab(self, results: Dict[str, Any], tab_name: Optional[str] = None):
+        """Create a result view and register it in the tab widget."""
+
+        view = self.result_processor.createView(results)
+        if not view:
+            return None, None
+
+        if not tab_name:
+            self.tab_counter += 1
+            tab_name = f"Analysis {self.tab_counter}"
+
+        view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        view.customContextMenuRequested.connect(
+            lambda pos, v=view: self.results_tabs.showResultContextMenu(pos, v, self.exportResults)
+        )
+
+        self.results_tabs.addTab(view, tab_name)
+        self.results_tabs.setCurrentWidget(view)
+        self.results_tabs.active_analyses.add(tab_name)
+        return view, tab_name
 
     def exportResults(self, results: Dict[str, Any], file_path: Optional[str] = None):
         try:
